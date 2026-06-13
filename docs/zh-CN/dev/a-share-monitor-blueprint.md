@@ -679,9 +679,10 @@ trade_signal -> paper_order -> broker_adapter -> order_status -> audit_log
 
 ### 任务组 C. 策略与风控
 
-- [ ] `C0` 实现技术指标与背离检测
-  - 状态：待开始
+- [x] `C0` 实现技术指标与背离检测
+  - 状态：已完成
   - 完成标准：基于本地 OHLCV 计算 EMA、RSI、MACD、KDJ、ATR、相对强度、顶背离和底背离，并输出可回测的证据字段；只对 C1/C2/C3 后留下的候选标的计算，不做无条件全市场扫描
+  - 备注：已新增 `a_share_monitor/strategy/technical_indicators.py` 与 `verify_c0_technical_indicators.py`；C0 只对 C3 输出的 `candidate` 与 `watchlist` 标的计算技术指标，底背离和超跌信息只作为观察证据，不绕过右侧信号门。
 
 - [x] `C1` 实现 A 股市场状态判断
   - 状态：已完成
@@ -749,15 +750,15 @@ trade_signal -> paper_order -> broker_adapter -> order_status -> audit_log
 下一项任务：
 
 ```text
-C0 实现技术指标与背离检测
+C4 实现风险收益比与仓位计算
 ```
 
 理由：
 
 - schema、fixture 与 fixture adapter 已经存在。
-- 市场状态层 C1、板块强度层 C2 与右侧股票筛选 / 观察列表层 C3 已经完成。
-- 下一步应进入 C0 技术指标与背离检测，但只对 C3 留下的 `candidate` 与 `watchlist` 标的做增量计算，不做全市场扫描。
-- 背离和超跌信息只能作为确认或风险提示，不得绕过 C3 的右侧信号门。
+- 市场状态层 C1、板块强度层 C2、右侧股票筛选 / 观察列表层 C3 与候选技术指标层 C0 已经完成。
+- 下一步应进入 C4 风险收益比、仓位和卖出风险价位计算。
+- C4 只能对 `candidate` 生成买入计划；`watchlist` 仍只做增量跟踪，不输出买入建议。
 
 ## 14. 每项任务完成规则
 

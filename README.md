@@ -52,6 +52,7 @@ python -m scripts.verify_b3_fixture_adapter --repo-root ../..
 python -m scripts.verify_c1_market_state --repo-root ../..
 python -m scripts.verify_c2_sector_strength --repo-root ../..
 python -m scripts.verify_c3_stock_screen --repo-root ../..
+python -m scripts.verify_c0_technical_indicators --repo-root ../..
 ```
 
 ## Safety Boundary

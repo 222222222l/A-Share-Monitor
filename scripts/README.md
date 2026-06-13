@@ -20,6 +20,8 @@ Current script:
   created in `C2`.
 - `verify_c3_stock_screen.py`: validates staged right-side stock screening and
   incremental watchlist output created in `C3`.
+- `verify_c0_technical_indicators.py`: validates candidate/watchlist-scoped
+  technical indicators created in `C0`.
 
 `verify_b3_fixture_adapter.py` imports the package modules. Run it from the
 package root:
@@ -30,4 +32,5 @@ python -m scripts.verify_b3_fixture_adapter --repo-root ../..
 python -m scripts.verify_c1_market_state --repo-root ../..
 python -m scripts.verify_c2_sector_strength --repo-root ../..
 python -m scripts.verify_c3_stock_screen --repo-root ../..
+python -m scripts.verify_c0_technical_indicators --repo-root ../..
 ```
