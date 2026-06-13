@@ -1,0 +1,7 @@
+symbol,exchange,name,list_date,market_board,tradable,bse_reference_only,industry,sector_tags,delist_date,risk_flags
+600001.SH,sse,Fixture Main Alpha,2020-01-02,sse_main,true,false,fixture-industry,advanced_manufacturing,,
+000001.SZ,szse,Fixture Main Beta,2020-01-02,szse_main,true,false,fixture-industry,advanced_manufacturing,,
+002001.SZ,szse,Fixture SME Gamma,2020-01-02,szse_main,true,false,fixture-industry,consumer_recovery,,
+300001.SZ,szse,Fixture Growth Delta,2020-01-02,chinext,true,false,fixture-industry,consumer_recovery,,
+688001.SH,sse,Fixture Star Epsilon,2020-01-02,star,true,false,fixture-industry,advanced_manufacturing,,
+920001.BJ,bse,Fixture BSE Reference,2021-11-15,bse,false,true,fixture-reference,small_cap_reference,,reference_only

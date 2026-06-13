@@ -1,0 +1,393 @@
+version: 1
+name: a-share-monitor-market-data-schema
+status: design-contract
+description: Normalized data schema for A-share daily monitoring and recommendation workflows.
+
+principles:
+  - Strategies consume normalized records, never raw provider payloads.
+  - Technical indicators are calculated locally from normalized OHLCV data.
+  - TradingView is an optional reference source, not the default automation source.
+  - Retail and institutional activity are modeled as counterparty-flow signals, not as exact account ownership truth.
+  - Every recommendation must include entry, target, risk-reward, and exit-risk fields.
+  - All date fields use ISO 8601 calendar dates unless explicitly marked as timestamps.
+  - Monetary values are CNY unless a field explicitly declares another unit.
+
+markets:
+  tradable:
+    - sse_main
+    - szse_main
+    - chinext
+    - star
+  reference_only:
+    - bse
+
+source_tiers:
+  L0:
+    name: local-fixture
+    purpose: offline tests and deterministic validation
+    default_for_validation: true
+  L1:
+    name: free-public-api
+    providers:
+      - akshare
+      - baostock
+      - exchange-public-pages
+      - cninfo
+  L1_5:
+    name: tradingview-reference
+    providers:
+      - tradingview-page
+      - tradingview-manual-export
+    default_for_automation: false
+  L2:
+    name: optional-paid-or-token-gated
+    providers:
+      - tushare-pro
+      - tradingview-paid-data
+  L3:
+    name: institutional-paid-data
+    providers:
+      - wind
+      - choice
+      - ifind
+
+record_types:
+  security_master:
+    required_fields:
+      - symbol
+      - exchange
+      - name
+      - list_date
+      - market_board
+      - tradable
+      - bse_reference_only
+    optional_fields:
+      - industry
+      - sector_tags
+      - delist_date
+      - risk_flags
+    field_rules:
+      symbol: normalized exchange-qualified symbol, e.g. 600000.SH
+      exchange: sse, szse, or bse
+      market_board: sse_main, szse_main, chinext, star, or bse
+      tradable: false for BSE in phase one
+      bse_reference_only: true for BSE records used only as sentiment references
+
+  daily_bar:
+    required_fields:
+      - symbol
+      - trade_date
+      - open
+      - high
+      - low
+      - close
+      - volume
+      - amount
+      - adj_factor
+      - is_suspended
+      - limit_up
+      - limit_down
+      - is_st
+      - is_new_stock
+    optional_fields:
+      - turnover_rate
+      - amplitude
+      - prev_close
+      - free_float_market_cap
+    field_rules:
+      open: adjusted or raw price according to price_mode
+      price_mode: raw, qfq, or hfq must be declared at dataset level
+      amount: traded amount in CNY
+      volume: shares or lots must be declared at dataset level
+
+  index_bar:
+    required_fields:
+      - index_symbol
+      - trade_date
+      - open
+      - high
+      - low
+      - close
+      - volume
+      - amount
+    optional_fields:
+      - index_name
+      - reference_market
+
+  sector_bar:
+    required_fields:
+      - sector_id
+      - sector_name
+      - trade_date
+      - close
+      - pct_change
+      - amount
+      - constituent_count
+    optional_fields:
+      - provider
+      - industry_level
+      - concept_tags
+
+  market_breadth:
+    required_fields:
+      - trade_date
+      - universe
+      - advancing_count
+      - declining_count
+      - limit_up_count
+      - limit_down_count
+      - new_high_20d_count
+      - new_low_20d_count
+      - total_amount
+    optional_fields:
+      - bse_amount
+      - bse_advancing_count
+      - bse_declining_count
+
+  market_state_signal:
+    required_fields:
+      - trade_date
+      - market_state
+      - buy_permission
+      - liquidity_state
+      - breadth_state
+      - rotation_state
+      - policy_support_signal
+      - evidence
+    optional_fields:
+      - index_trend_score
+      - size_style_divergence_score
+      - sector_diffusion_score
+      - active_sector_count
+      - limit_down_pressure
+      - limit_up_decay
+      - total_amount_ratio_20d
+      - heavyweight_support_score
+      - small_cap_stress_score
+      - northbound_flow_proxy
+      - margin_stress_proxy
+    field_rules:
+      market_state: liquidity_crisis, policy_support_rebound, rotation_opportunity, broad_risk_on, mixed_chop, overheated_chase_risk, or unknown
+      buy_permission: blocked, selective, rotation_only, rebound_watch, or normal
+      signal_source: derived-from-market-breadth-index-sector-and-flow-records
+
+  technical_indicator:
+    required_fields:
+      - symbol
+      - trade_date
+      - ema_5
+      - ema_10
+      - ema_20
+      - ema_60
+      - ema_12
+      - ema_26
+      - rsi_6
+      - rsi_14
+      - macd_dif
+      - macd_dea
+      - macd_hist
+      - kdj_k
+      - kdj_d
+      - kdj_j
+      - atr_14
+      - relative_strength_20d
+    optional_fields:
+      - ma_5
+      - ma_10
+      - ma_20
+      - ma_60
+      - volume_ratio_20d
+      - distance_to_ema_20
+    field_rules:
+      indicator_source: local-calculation
+      warmup_min_days: 180
+
+  divergence_signal:
+    required_fields:
+      - symbol
+      - trade_date
+      - divergence
+      - price_swing_a
+      - price_swing_b
+      - indicator_name
+      - indicator_swing_a
+      - indicator_swing_b
+      - evidence
+    optional_fields:
+      - volume_confirmation
+      - sector_confirmation
+    field_rules:
+      divergence: bullish_divergence, bearish_divergence, or none
+      indicator_name: rsi_14, macd_dif, macd_hist, kdj_k, or kdj_j
+
+  fundamental_risk_event:
+    required_fields:
+      - symbol
+      - event_date
+      - announcement_date
+      - event_type
+      - severity
+      - summary
+      - source
+    optional_fields:
+      - source_url
+      - numeric_impact
+      - related_report_period
+    field_rules:
+      severity: low, medium, high, or critical
+      event_type: earnings_miss, audit_opinion, regulator_inquiry, penalty, investigation, unlock, reduction, pledge, cashflow_warning, goodwill_risk, receivables_risk, or other
+
+  ownership_flow_signal:
+    required_fields:
+      - symbol
+      - trade_date
+      - retail_crowding_score
+      - institutional_accumulation_score
+      - institutional_exit_score
+      - counterparty_signal
+      - evidence
+    optional_fields:
+      - shareholder_count_change_pct
+      - avg_holding_per_account_change_pct
+      - northbound_holding_change_pct
+      - margin_balance_change_pct
+      - margin_buy_ratio
+      - dragon_tiger_institution_net_buy
+      - block_trade_discount_rate
+      - block_trade_net_amount
+      - fund_holding_change_pct
+      - etf_flow_proxy
+      - insider_reduction_amount
+      - data_lag_days
+    field_rules:
+      counterparty_signal: retail_institution_exit_risk, retail_exit_institution_accumulation, mixed, or unknown
+      scoring_range: 0 to 100
+      direct_retail_holding_unavailable: true
+      signal_source: proxy-derived
+
+  sector_score:
+    required_fields:
+      - sector_id
+      - trade_date
+      - relative_strength_5d
+      - relative_strength_20d
+      - amount_ratio_20d
+      - limit_up_members
+      - score
+      - rank
+    optional_fields:
+      - bse_reference_score
+      - policy_catalyst
+      - leading_symbols
+
+  stock_signal:
+    required_fields:
+      - symbol
+      - trade_date
+      - setup_type
+      - market_regime
+      - sector_score
+      - technical_score
+      - signal_status
+      - evidence
+    optional_fields:
+      - rejection_reason
+      - divergence
+      - indicator_snapshot
+      - ownership_flow_signal
+    field_rules:
+      setup_type: trend_pullback, platform_breakout, or none
+      signal_status: candidate, rejected, or watch_only
+
+  recommendation:
+    required_fields:
+      - symbol
+      - name
+      - decision
+      - trade_date
+      - next_action_date
+      - setup_type
+      - entry_zone
+      - stop_loss
+      - technical_exit_price
+      - technical_exit_reason
+      - fundamental_exit_trigger
+      - time_exit_rule
+      - target_1
+      - target_2
+      - risk_reward
+      - position_size
+      - holding_period
+      - invalidation
+      - market_regime
+      - sector_reason
+      - technical_reason
+      - technical_indicators
+      - divergence
+      - fundamental_risk
+      - liquidity_risk
+      - ownership_flow_risk
+      - data_quality
+      - confidence
+      - audit_notes
+    optional_fields:
+      - paper_order
+      - source_records
+    field_rules:
+      decision: buy_watch, buy_ready, reject, hold_review, or exit_review
+      risk_reward: must be greater than the configured min_risk_reward for buy decisions
+      technical_exit_price: required for buy_watch and buy_ready
+      final_decision_owner: user
+
+enums:
+  market_regime:
+    - broad_risk_on
+    - rotation_opportunity
+    - mixed_chop
+    - policy_support_rebound
+    - liquidity_crisis
+    - overheated_chase_risk
+    - unknown
+  buy_permission:
+    - blocked
+    - selective
+    - rotation_only
+    - rebound_watch
+    - normal
+  setup_type:
+    - trend_pullback
+    - platform_breakout
+    - none
+  decision:
+    - buy_watch
+    - buy_ready
+    - reject
+    - hold_review
+    - exit_review
+  divergence:
+    - bullish_divergence
+    - bearish_divergence
+    - none
+  counterparty_signal:
+    - retail_institution_exit_risk
+    - retail_exit_institution_accumulation
+    - mixed
+    - unknown
+
+quality_rules:
+  required_history_days:
+    technical_indicators: 180
+    strategy_minimum: 60
+  reject_when:
+    - missing_daily_bar
+    - missing_limit_price
+    - missing_suspension_status
+    - missing_exit_risk_fields_for_buy
+    - retail_crowding_with_institutional_exit_for_buy
+    - risk_reward_below_threshold
+    - bse_symbol_in_tradable_output
+  warn_when:
+    - provider_field_mapping_incomplete
+    - ownership_flow_proxy_low_confidence
+    - stale_fundamental_data
+    - tradingview_used_as_manual_reference

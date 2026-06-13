@@ -1,0 +1,26 @@
+{
+  "dataset_id": "b2_minimal",
+  "version": 1,
+  "synthetic": true,
+  "purpose": "offline validation fixture for A-share daily monitoring",
+  "price_mode": "qfq",
+  "volume_unit": "shares",
+  "currency": "CNY",
+  "start_date": "2025-01-02",
+  "end_date": "2025-09-10",
+  "trading_day_count": 180,
+  "tradable_symbol_count": 5,
+  "reference_only_markets": [
+    "bse"
+  ],
+  "files": {
+    "security_master.csv": 6,
+    "daily_bars.csv": 900,
+    "index_bars.csv": 540,
+    "sector_bars.csv": 360,
+    "market_breadth.csv": 180,
+    "fundamental_risk_events.csv": 1,
+    "ownership_flow_signals.csv": 5
+  },
+  "safety_note": "Synthetic deterministic data; not investment advice."
+}

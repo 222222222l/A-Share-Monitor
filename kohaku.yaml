@@ -1,0 +1,23 @@
+name: a-share-monitor
+version: "0.1.0"
+description: "A-share daily monitoring and recommendation lab package"
+
+distribution:
+  lifecycle_stage: lab
+  release_channel: experimental
+  marketplace_eligible: false
+  governance_policy: DISTRIBUTION.md
+  marketplace_name: a-share-monitor
+  framework_constraint: ">=2.0.0"
+  rollback_modes:
+    - editable-revert
+    - git-tag-pin
+
+creatures:
+  - name: lab-runner
+    path: creatures/lab-runner
+
+terrariums: []
+skills: []
+tools: []
+plugins: []

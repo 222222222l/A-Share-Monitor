@@ -1,0 +1,15 @@
+name: lab-runner
+description: A-share monitor lab entry for offline strategy and data validation
+
+controller:
+  temperature: 0.2
+
+system_prompt_file: prompts/system.md
+
+tools:
+  - read
+  - glob
+  - grep
+  - json_read
+  - think
+  - stop_task

@@ -1,0 +1,2 @@
+symbol,event_date,announcement_date,event_type,severity,summary,source,source_url,numeric_impact,related_report_period
+002001.SZ,2025-07-10,2025-07-11,cashflow_warning,medium,Synthetic fixture event for risk-filter validation.,fixture,,,2025Q2
