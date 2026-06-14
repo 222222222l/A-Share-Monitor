@@ -4,6 +4,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from a_share_monitor.config import get_float
+from a_share_monitor.config import get_int
+from a_share_monitor.config import load_strategy_config
 from a_share_monitor.data import DailyBar
 from a_share_monitor.data import FixtureMarketDataAdapter
 from a_share_monitor.data import FundamentalRiskEvent
@@ -23,6 +26,39 @@ class RiskPlanConfig:
     account_risk_fraction: float = 0.01
     max_position_fraction: float = 0.2
     time_exit_days: int = 10
+    target_2_lookback_days: int = 60
+    target_2_risk_multiple: float = 2.4
+    target_2_extension_multiple: float = 0.6
+    thin_liquidity_amount: float = 20_000_000
+
+
+def default_risk_plan_config() -> RiskPlanConfig:
+    """Build the C4 risk plan config from the package strategy config."""
+    strategy_config = load_strategy_config()
+    return RiskPlanConfig(
+        min_risk_reward=get_float(
+            strategy_config, "risk_preference.min_risk_reward", 1.5
+        ),
+        account_risk_fraction=get_float(
+            strategy_config, "risk_preference.account_risk_fraction", 0.01
+        ),
+        max_position_fraction=get_float(
+            strategy_config, "risk_preference.max_position_fraction", 0.2
+        ),
+        time_exit_days=get_int(strategy_config, "risk_preference.time_exit_days", 10),
+        target_2_lookback_days=get_int(
+            strategy_config, "risk_preference.target_2_lookback_days", 60
+        ),
+        target_2_risk_multiple=get_float(
+            strategy_config, "risk_preference.target_2_risk_multiple", 2.4
+        ),
+        target_2_extension_multiple=get_float(
+            strategy_config, "risk_preference.target_2_extension_multiple", 0.6
+        ),
+        thin_liquidity_amount=get_float(
+            strategy_config, "risk_preference.thin_liquidity_amount", 20_000_000
+        ),
+    )
 
 
 @dataclass(frozen=True)
@@ -73,7 +109,7 @@ def evaluate_latest_fixture_risk_plan(
     config: RiskPlanConfig | None = None,
 ) -> RiskPlanReport:
     adapter = adapter or FixtureMarketDataAdapter()
-    config = config or RiskPlanConfig()
+    config = config or default_risk_plan_config()
     stock_report = evaluate_latest_fixture_stock_screen(adapter)
     candidate_symbols = stock_report.candidate_symbols
     daily_bars = adapter.load_symbol_daily_bars(
@@ -173,7 +209,7 @@ def _build_recommendation(
     planned_entry = entry_zone[1]
     risk_per_share = max(planned_entry - stop_loss, latest.close * 0.01)
     target_1 = _target_1(rows, planned_entry, risk_per_share)
-    target_2 = _target_2(rows, planned_entry, risk_per_share, target_1)
+    target_2 = _target_2(rows, planned_entry, risk_per_share, target_1, config)
     risk_reward = round((target_1 - planned_entry) / risk_per_share, 4)
     decision = "buy_ready" if risk_reward > config.min_risk_reward else "reject"
 
@@ -208,7 +244,7 @@ def _build_recommendation(
         technical_indicators=_technical_indicator_payload(snapshot),
         divergence=_divergence_payload(divergence),
         fundamental_risk=_fundamental_risk_payload(events),
-        liquidity_risk=_liquidity_risk(latest),
+        liquidity_risk=_liquidity_risk(latest, config),
         ownership_flow_risk=_ownership_flow_risk(ownership),
         data_quality="offline synthetic fixture; verify with live data before use",
         confidence=_confidence(signal, snapshot, divergence, ownership, risk_reward),
@@ -254,10 +290,11 @@ def _target_2(
     planned_entry: float,
     risk_per_share: float,
     target_1: float,
+    config: RiskPlanConfig,
 ) -> float:
-    recent_high = max(item.high for item in rows[-60:])
-    r_multiple_target = planned_entry + (risk_per_share * 2.4)
-    extension_target = target_1 + (risk_per_share * 0.6)
+    recent_high = max(item.high for item in rows[-config.target_2_lookback_days :])
+    r_multiple_target = planned_entry + (risk_per_share * config.target_2_risk_multiple)
+    extension_target = target_1 + (risk_per_share * config.target_2_extension_multiple)
     return round(max(recent_high, r_multiple_target, extension_target), 2)
 
 
@@ -345,8 +382,8 @@ def _fundamental_risk_payload(
     )
 
 
-def _liquidity_risk(latest: DailyBar) -> str:
-    if latest.amount < 20_000_000:
+def _liquidity_risk(latest: DailyBar, config: RiskPlanConfig) -> str:
+    if latest.amount < config.thin_liquidity_amount:
         return "thin liquidity; reduce size or reject"
     if latest.close >= latest.limit_up * 0.995:
         return "near limit-up; avoid chasing if no executable entry"

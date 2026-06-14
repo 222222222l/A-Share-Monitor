@@ -22,7 +22,9 @@ REQUIRED_PATHS = [
     "data-schema/README.md",
     "fixtures/README.md",
     "scripts/README.md",
+    "config/strategy.yaml",
     "a_share_monitor/__init__.py",
+    "a_share_monitor/config.py",
     "a_share_monitor/data/__init__.py",
     "a_share_monitor/strategy/__init__.py",
 ]
@@ -38,8 +40,8 @@ def verify(repo_root: Path) -> dict:
     )
     if manifest.get("name") != "a-share-monitor":
         raise AssertionError("manifest name must be a-share-monitor")
-    if manifest.get("version") != "0.1.8":
-        raise AssertionError("manifest version must be 0.1.8")
+    if manifest.get("version") != "0.1.9":
+        raise AssertionError("manifest version must be 0.1.9")
 
     creatures = manifest.get("creatures") or []
     creature_names = {entry.get("name") for entry in creatures}
@@ -72,6 +74,22 @@ def verify(repo_root: Path) -> dict:
                 f"lab-runner should not expose high-context tool: {tool_name}"
             )
 
+    strategy_config = yaml.safe_load(
+        (PACKAGE_ROOT / "config" / "strategy.yaml").read_text(encoding="utf-8")
+    )
+    for section in (
+        "data_quality",
+        "quote_screen",
+        "market_gate",
+        "technical",
+        "risk_preference",
+        "fallback_pool",
+    ):
+        if section not in strategy_config:
+            raise AssertionError(f"strategy config missing section: {section}")
+    if strategy_config["risk_preference"]["min_risk_reward"] < 1.5:
+        raise AssertionError("default min risk-reward must stay at least 1.5")
+
     blueprint = repo_root / "docs" / "zh-CN" / "dev" / "a-share-monitor-blueprint.md"
     if not blueprint.exists():
         raise AssertionError("a-share-monitor blueprint is missing")
@@ -85,6 +103,7 @@ def verify(repo_root: Path) -> dict:
         "version": manifest["version"],
         "creatures": [entry["name"] for entry in creatures],
         "required_paths": len(REQUIRED_PATHS),
+        "strategy_config": "config/strategy.yaml",
     }
 
 

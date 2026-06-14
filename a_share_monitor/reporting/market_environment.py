@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any, Callable
 
+from a_share_monitor.config import DEFAULT_STRATEGY_CONFIG
+from a_share_monitor.config import get_float
 from a_share_monitor.reporting.tencent_quote import fetch_tencent_index_quotes
 
 INDEX_GROUPS = {
@@ -39,8 +41,10 @@ def build_market_environment(
     trade_date: str,
     *,
     progress: Callable[[str, dict[str, Any]], None] | None = None,
+    strategy_config: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Build market-state and sector-scope fields for downstream gates."""
+    strategy_config = strategy_config or DEFAULT_STRATEGY_CONFIG
     _progress(progress, "market_environment_start", {"source": "tencent_index_quote"})
     index_quotes: list[dict[str, Any]] = []
     index_error = ""
@@ -56,8 +60,8 @@ def build_market_environment(
 
     breadth = _breadth_summary(quotes)
     indices = _index_summary(index_quotes)
-    regime = _classify_market_regime(breadth, indices)
-    sector_scope = _build_sector_scope(indices, regime)
+    regime = _classify_market_regime(breadth, indices, strategy_config)
+    sector_scope = _build_sector_scope(indices, regime, strategy_config)
     market_state = {
         "trade_date": trade_date,
         "source": "tencent_index_quote+tencent_batch_quote",
@@ -160,7 +164,9 @@ def _index_summary(index_quotes: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def _classify_market_regime(
-    breadth: dict[str, Any], indices: list[dict[str, Any]]
+    breadth: dict[str, Any],
+    indices: list[dict[str, Any]],
+    strategy_config: dict[str, Any],
 ) -> dict[str, Any]:
     index_changes = [float(item["pct_change"]) for item in indices]
     index_average = sum(index_changes) / max(len(index_changes), 1)
@@ -170,16 +176,52 @@ def _classify_market_regime(
     limit_down = int(breadth["limit_down_count"])
     limit_up = int(breadth["limit_up_count"])
 
-    if declining_ratio >= 0.72 and limit_down > max(limit_up * 2, 20):
+    liquidity_crisis_declining_ratio = get_float(
+        strategy_config, "market_gate.liquidity_crisis_declining_ratio", 0.72
+    )
+    limit_down_min = get_float(
+        strategy_config, "market_gate.liquidity_crisis_limit_down_min", 20
+    )
+    limit_down_multiplier = get_float(
+        strategy_config,
+        "market_gate.liquidity_crisis_limit_down_vs_up_multiplier",
+        2.0,
+    )
+    broad_advancing_ratio = get_float(
+        strategy_config, "market_gate.broad_risk_on_advancing_ratio", 0.65
+    )
+    broad_index_change = get_float(
+        strategy_config, "market_gate.broad_risk_on_index_average_pct_change", 0.3
+    )
+    rotation_advancing_ratio = get_float(
+        strategy_config, "market_gate.rotation_advancing_ratio", 0.5
+    )
+    policy_support_index_change = get_float(
+        strategy_config, "market_gate.policy_support_index_average_pct_change", 0.0
+    )
+    policy_support_max_advancing_ratio = get_float(
+        strategy_config, "market_gate.policy_support_max_advancing_ratio", 0.45
+    )
+
+    if declining_ratio >= liquidity_crisis_declining_ratio and limit_down > max(
+        limit_up * limit_down_multiplier, limit_down_min
+    ):
         state = "liquidity_crisis"
         permission = "blocked"
-    elif advancing_ratio >= 0.65 and index_average >= 0.3:
+    elif (
+        advancing_ratio >= broad_advancing_ratio and index_average >= broad_index_change
+    ):
         state = "broad_risk_on"
         permission = "selective"
-    elif advancing_ratio >= 0.5 and positive_indices >= max(len(indices) // 2, 1):
+    elif advancing_ratio >= rotation_advancing_ratio and positive_indices >= max(
+        len(indices) // 2, 1
+    ):
         state = "rotation_opportunity"
         permission = "rotation_only"
-    elif index_average > 0 and advancing_ratio < 0.45:
+    elif (
+        index_average > policy_support_index_change
+        and advancing_ratio < policy_support_max_advancing_ratio
+    ):
         state = "policy_support_rebound"
         permission = "rebound_watch"
     else:
@@ -189,8 +231,10 @@ def _classify_market_regime(
     return {
         "market_regime": state,
         "buy_permission": permission,
-        "liquidity_state": _liquidity_state(float(breadth["total_amount"])),
-        "breadth_state": _breadth_state(advancing_ratio),
+        "liquidity_state": _liquidity_state(
+            float(breadth["total_amount"]), strategy_config
+        ),
+        "breadth_state": _breadth_state(advancing_ratio, strategy_config),
         "rotation_state": "active" if permission == "rotation_only" else state,
         "index_average_pct_change": round(index_average, 4),
         "positive_index_count": positive_indices,
@@ -198,16 +242,26 @@ def _classify_market_regime(
 
 
 def _build_sector_scope(
-    indices: list[dict[str, Any]], regime: dict[str, Any]
+    indices: list[dict[str, Any]],
+    regime: dict[str, Any],
+    strategy_config: dict[str, Any],
 ) -> dict[str, Any]:
     top_groups = _group_index_styles(indices)
+    active_style_change = get_float(
+        strategy_config, "market_gate.active_style_pct_change", 0.3
+    )
+    weak_style_change = get_float(
+        strategy_config, "market_gate.weak_style_pct_change", -0.3
+    )
     active = [
-        item["sector_id"] for item in top_groups if float(item["avg_pct_change"]) >= 0.3
+        item["sector_id"]
+        for item in top_groups
+        if float(item["avg_pct_change"]) >= active_style_change
     ]
     weak = [
         item["sector_id"]
         for item in top_groups
-        if float(item["avg_pct_change"]) <= -0.3
+        if float(item["avg_pct_change"]) <= weak_style_change
     ]
     if not active and top_groups and regime["buy_permission"] != "blocked":
         active = [top_groups[0]["sector_id"]]
@@ -247,22 +301,35 @@ def _group_index_styles(indices: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return sorted(result, key=lambda item: item["avg_pct_change"], reverse=True)
 
 
-def _liquidity_state(total_amount: float) -> str:
-    if total_amount >= 1_500_000_000_000:
+def _liquidity_state(total_amount: float, strategy_config: dict[str, Any]) -> str:
+    high_liquidity = get_float(
+        strategy_config, "market_gate.high_liquidity_amount", 1_500_000_000_000
+    )
+    normal_liquidity = get_float(
+        strategy_config, "market_gate.normal_liquidity_amount", 800_000_000_000
+    )
+    if total_amount >= high_liquidity:
         return "high_liquidity"
-    if total_amount >= 800_000_000_000:
+    if total_amount >= normal_liquidity:
         return "normal_liquidity"
     if total_amount > 0:
         return "low_liquidity"
     return "unknown"
 
 
-def _breadth_state(advancing_ratio: float) -> str:
-    if advancing_ratio >= 0.65:
+def _breadth_state(advancing_ratio: float, strategy_config: dict[str, Any]) -> str:
+    broad_positive = get_float(
+        strategy_config, "market_gate.breadth_broad_positive_ratio", 0.65
+    )
+    positive_rotation = get_float(
+        strategy_config, "market_gate.breadth_positive_rotation_ratio", 0.5
+    )
+    mixed = get_float(strategy_config, "market_gate.breadth_mixed_ratio", 0.35)
+    if advancing_ratio >= broad_positive:
         return "broad_positive"
-    if advancing_ratio >= 0.5:
+    if advancing_ratio >= positive_rotation:
         return "positive_rotation"
-    if advancing_ratio >= 0.35:
+    if advancing_ratio >= mixed:
         return "mixed"
     return "broad_negative"
 

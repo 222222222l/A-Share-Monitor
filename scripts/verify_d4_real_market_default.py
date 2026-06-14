@@ -7,6 +7,7 @@ import argparse
 import json
 from pathlib import Path
 
+from a_share_monitor.config import load_strategy_config
 from a_share_monitor.reporting import build_unavailable_real_snapshot
 from a_share_monitor.reporting import resolve_market_date
 
@@ -40,6 +41,10 @@ def verify(repo_root: Path) -> dict:
         "build_market_environment" in real_snapshot_text,
         "real reports must build explicit market environment fields",
     )
+    check(
+        "load_strategy_config" in real_snapshot_text,
+        "real reports must load user strategy configuration",
+    )
     tencent_adapter = (
         PACKAGE_ROOT / "a_share_monitor" / "reporting" / "tencent_quote.py"
     )
@@ -69,7 +74,13 @@ def verify(repo_root: Path) -> dict:
         requested_trade_date="2026-06-12",
         user_intent="unit test",
     )
+    strategy_config = load_strategy_config()
+    check(
+        strategy_config["risk_preference"]["min_risk_reward"] == 1.5,
+        "default strategy config risk-reward mismatch",
+    )
     check(unavailable["status"] == "DATA_UNAVAILABLE", "status mismatch")
+    check(unavailable["strategy_config"]["profile"], "strategy profile missing")
     check(
         unavailable["data_freshness"]["mode"] == "real",
         "unavailable report must remain real mode",

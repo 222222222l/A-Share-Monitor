@@ -1,0 +1,82 @@
+version: 1
+profile: default
+
+data_quality:
+  minimum_full_market_quotes: 500
+  http_attempts_per_request: 2
+  http_timeout_seconds: 12
+  fallback_trade_date_walk_days: 8
+  fallback_probe_limit: 3
+  eastmoney_backup_page_size: 100
+  eastmoney_backup_max_pages: 70
+  eastmoney_backup_page_delay_seconds: 0.12
+  kline_request_delay_seconds: 0.1
+
+quote_screen:
+  min_entry_amount: 80000000
+  max_abs_pct_change: 8.0
+  require_close_above_open: true
+  max_kline_screen_symbols: 12
+  max_signal_rows: 12
+  recommendation_limit: 5
+  watchlist_limit: 10
+  watchlist_min_amount: 120000000
+
+market_gate:
+  liquidity_crisis_declining_ratio: 0.72
+  liquidity_crisis_limit_down_min: 20
+  liquidity_crisis_limit_down_vs_up_multiplier: 2.0
+  broad_risk_on_advancing_ratio: 0.65
+  broad_risk_on_index_average_pct_change: 0.3
+  rotation_advancing_ratio: 0.5
+  policy_support_index_average_pct_change: 0.0
+  policy_support_max_advancing_ratio: 0.45
+  active_style_pct_change: 0.3
+  weak_style_pct_change: -0.3
+  high_liquidity_amount: 1500000000000
+  normal_liquidity_amount: 800000000000
+  breadth_broad_positive_ratio: 0.65
+  breadth_positive_rotation_ratio: 0.5
+  breadth_mixed_ratio: 0.35
+
+technical:
+  min_history_days: 60
+  ema_fast: 5
+  ema_mid: 10
+  ema_trend: 20
+  ema_long: 60
+  ema_long_tolerance: 0.995
+  near_trend_ema_pct: 0.08
+  atr_window: 14
+  stop_lookback_days: 10
+  stop_atr_buffer: 0.35
+  entry_atr_buffer: 0.2
+  target_lookback_days: 20
+  target_risk_multiple: 1.6
+  min_price_risk_pct: 0.01
+
+risk_preference:
+  min_risk_reward: 1.5
+  max_position_fraction: 0.2
+  account_risk_fraction: 0.01
+  time_exit_days: 10
+  max_user_drawdown_pct: 0.15
+  target_2_lookback_days: 60
+  target_2_risk_multiple: 2.4
+  target_2_extension_multiple: 0.6
+  thin_liquidity_amount: 20000000
+
+fallback_pool:
+  "300750": CATL
+  "002594": BYD
+  "600519": Kweichow Moutai
+  "601318": Ping An
+  "600036": CMB
+  "601899": Zijin Mining
+  "688981": SMIC
+  "300059": East Money
+  "002230": iFlytek
+  "601138": Foxconn Industrial Internet
+  "002371": NAURA
+  "688111": Kingsoft Office
+  "600900": Yangtze Power

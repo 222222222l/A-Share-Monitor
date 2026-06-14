@@ -39,6 +39,23 @@ This package currently contains the offline A/B/C validation path:
 
 Blueprint: `docs/zh-CN/dev/a-share-monitor-blueprint.md`
 
+## Strategy Configuration
+
+User-adjustable screening and risk parameters live in
+`config/strategy.yaml`. The default profile keeps the current behavior stable
+while exposing the main decision knobs:
+
+- data quality gates and retry bounds
+- quote pre-screening thresholds
+- market-regime and liquidity gates
+- EMA/ATR technical confirmation windows
+- risk-reward, position, drawdown, and time-exit preferences
+- fallback quote-pool symbols
+
+To keep local preferences outside the package checkout, point
+`A_SHARE_MONITOR_STRATEGY_CONFIG` to another YAML file with only the fields you
+want to override.
+
 ## Verify
 
 ```bash

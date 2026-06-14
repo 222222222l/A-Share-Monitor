@@ -16,8 +16,16 @@ from datetime import timedelta
 from typing import Any, Callable
 from zoneinfo import ZoneInfo
 
+from a_share_monitor.config import DEFAULT_STRATEGY_CONFIG
+from a_share_monitor.config import get_bool
+from a_share_monitor.config import get_float
+from a_share_monitor.config import get_int
+from a_share_monitor.config import load_strategy_config
+from a_share_monitor.config import summarize_strategy_config
 from a_share_monitor.reporting.market_environment import build_market_environment
 from a_share_monitor.reporting.market_environment import unavailable_market_environment
+from a_share_monitor.reporting.technical_math import atr
+from a_share_monitor.reporting.technical_math import ema
 from a_share_monitor.reporting.tencent_quote import TENCENT_BATCH_SIZE
 from a_share_monitor.reporting.tencent_quote import fetch_tencent_universe_quotes
 
@@ -25,23 +33,6 @@ EASTMONEY_UT = "bd1d9ddb04089700cf9c27f6f7426281"
 CHINA_TZ = ZoneInfo("Asia/Shanghai")
 HTTP_ATTEMPTS = 2
 HTTP_TIMEOUT_SECONDS = 12
-FALLBACK_PROBE_LIMIT = 3
-MAX_KLINE_SCREEN_SYMBOLS = 12
-FALLBACK_POOL = {
-    "300750": "CATL",
-    "002594": "BYD",
-    "600519": "Kweichow Moutai",
-    "601318": "Ping An",
-    "600036": "CMB",
-    "601899": "Zijin Mining",
-    "688981": "SMIC",
-    "300059": "East Money",
-    "002230": "iFlytek",
-    "601138": "Foxconn Industrial Internet",
-    "002371": "NAURA",
-    "688111": "Kingsoft Office",
-    "600900": "Yangtze Power",
-}
 
 
 def build_real_snapshot_report(
@@ -51,11 +42,18 @@ def build_real_snapshot_report(
     progress: Callable[[str, dict[str, Any]], None] | None = None,
 ) -> dict[str, Any]:
     """Build a compact real-market snapshot report for the Web UI agent."""
+    strategy_config = load_strategy_config()
     resolved_date = resolve_market_date(requested_trade_date)
     _progress(progress, "resolve_trade_date", {"trade_date": resolved_date})
-    quotes = _fetch_a_share_quotes(resolved_date, progress=progress)
+    quotes = _fetch_a_share_quotes(
+        resolved_date, progress=progress, strategy_config=strategy_config
+    )
     report = _build_snapshot_report(
-        quotes, resolved_date, requested_trade_date, progress=progress
+        quotes,
+        resolved_date,
+        requested_trade_date,
+        progress=progress,
+        strategy_config=strategy_config,
     )
     report["user_intent"] = user_intent
     return report
@@ -68,8 +66,10 @@ def build_unavailable_real_snapshot(
     user_intent: str = "latest_completed_session",
 ) -> dict[str, Any]:
     """Return an explicit no-data report without falling back to fixtures."""
+    strategy_config = load_strategy_config()
     resolved_date = resolve_market_date(requested_trade_date)
     environment = unavailable_market_environment(resolved_date, error)
+    min_risk_reward = get_float(strategy_config, "risk_preference.min_risk_reward", 1.5)
     return {
         "schema_version": "a-share-monitor.real-snapshot.v1",
         "status": "DATA_UNAVAILABLE",
@@ -84,8 +84,12 @@ def build_unavailable_real_snapshot(
             "fallback_to_fixture": False,
         },
         "data_acquisition": _data_acquisition_summary(
-            [], error=error, market_environment=environment
+            [],
+            error=error,
+            market_environment=environment,
+            strategy_config=strategy_config,
         ),
+        "strategy_config": summarize_strategy_config(strategy_config),
         "decision_boundary": _decision_boundary(
             "real data unavailable; do not infer recommendations from stale fixture data"
         ),
@@ -93,7 +97,7 @@ def build_unavailable_real_snapshot(
         "market_state": environment["market_state"],
         "sector_scope": environment["sector_scope"],
         "selection_summary": {
-            "min_risk_reward": 1.5,
+            "min_risk_reward": min_risk_reward,
             "planned_symbols": [],
             "watchlist_symbols": [],
             "recommendation_count": 0,
@@ -125,8 +129,17 @@ def resolve_market_date(requested_trade_date: str | None = None) -> str:
 
 
 def _fetch_a_share_quotes(
-    trade_date: str, *, progress: Callable[[str, dict[str, Any]], None] | None = None
+    trade_date: str,
+    *,
+    progress: Callable[[str, dict[str, Any]], None] | None = None,
+    strategy_config: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
+    strategy_config = strategy_config or DEFAULT_STRATEGY_CONFIG
+    page_size = get_int(strategy_config, "data_quality.eastmoney_backup_page_size", 100)
+    max_pages = get_int(strategy_config, "data_quality.eastmoney_backup_max_pages", 70)
+    page_delay = get_float(
+        strategy_config, "data_quality.eastmoney_backup_page_delay_seconds", 0.12
+    )
     _progress(
         progress,
         "quote_source_start",
@@ -152,7 +165,7 @@ def _fetch_a_share_quotes(
     fs = "m:1+t:2,m:1+t:23,m:0+t:6,m:0+t:80"
     _progress(progress, "quote_source_start", {"source": "eastmoney_quote"})
     try:
-        first = _fetch_quote_page(1, 100, fields, fs)
+        first = _fetch_quote_page(1, page_size, fields, fs, strategy_config)
         total = int(first["data"]["total"])
         rows = list(first["data"]["diff"])
         _progress(
@@ -160,9 +173,9 @@ def _fetch_a_share_quotes(
             "quote_page",
             {"source": "eastmoney_quote", "page": 1, "rows": len(rows), "total": total},
         )
-        for page in range(2, min((total // 100) + 2, 70)):
-            time.sleep(0.12)
-            payload = _fetch_quote_page(page, 100, fields, fs)
+        for page in range(2, min((total // page_size) + 2, max_pages)):
+            time.sleep(page_delay)
+            payload = _fetch_quote_page(page, page_size, fields, fs, strategy_config)
             rows.extend(payload["data"].get("diff") or [])
             if page == 2 or page % 10 == 0:
                 _progress(
@@ -191,25 +204,39 @@ def _fetch_a_share_quotes(
             "quote_source_failed",
             {"source": "eastmoney_quote", "error": str(exc)},
         )
-    return _fetch_fallback_quotes_with_date_walk(trade_date, progress=progress)
+    return _fetch_fallback_quotes_with_date_walk(
+        trade_date, progress=progress, strategy_config=strategy_config
+    )
 
 
 def _fetch_fallback_quotes_with_date_walk(
-    trade_date: str, *, progress: Callable[[str, dict[str, Any]], None] | None = None
+    trade_date: str,
+    *,
+    progress: Callable[[str, dict[str, Any]], None] | None = None,
+    strategy_config: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
+    strategy_config = strategy_config or DEFAULT_STRATEGY_CONFIG
     candidate = date.fromisoformat(trade_date)
     last_error = "no usable fallback quotes"
+    date_walk_days = get_int(
+        strategy_config, "data_quality.fallback_trade_date_walk_days", 8
+    )
+    probe_limit = get_int(strategy_config, "data_quality.fallback_probe_limit", 3)
     _progress(
         progress,
         "fallback_probe_start",
-        {"source": "fallback_kline_pool", "probe_limit": FALLBACK_PROBE_LIMIT},
+        {"source": "fallback_kline_pool", "probe_limit": probe_limit},
     )
-    for _ in range(8):
+    for _ in range(date_walk_days):
         candidate = (
             candidate if candidate.weekday() < 5 else _previous_weekday(candidate)
         )
         try:
-            quotes = _fetch_fallback_quotes(candidate.isoformat(), progress=progress)
+            quotes = _fetch_fallback_quotes(
+                candidate.isoformat(),
+                progress=progress,
+                strategy_config=strategy_config,
+            )
             if quotes:
                 _progress(
                     progress,
@@ -228,17 +255,23 @@ def _fetch_fallback_quotes_with_date_walk(
 
 
 def _fetch_fallback_quotes(
-    trade_date: str, *, progress: Callable[[str, dict[str, Any]], None] | None = None
+    trade_date: str,
+    *,
+    progress: Callable[[str, dict[str, Any]], None] | None = None,
+    strategy_config: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
+    strategy_config = strategy_config or DEFAULT_STRATEGY_CONFIG
+    probe_limit = get_int(strategy_config, "data_quality.fallback_probe_limit", 3)
+    fallback_pool = dict(strategy_config.get("fallback_pool") or {})
     quotes = []
-    for index, (symbol, name) in enumerate(FALLBACK_POOL.items(), start=1):
-        if index > FALLBACK_PROBE_LIMIT:
+    for index, (symbol, name) in enumerate(fallback_pool.items(), start=1):
+        if index > probe_limit:
             break
         time.sleep(0.1)
         _progress(
             progress,
             "fallback_symbol",
-            {"symbol": symbol, "index": index, "limit": FALLBACK_PROBE_LIMIT},
+            {"symbol": symbol, "index": index, "limit": probe_limit},
         )
         rows = _fetch_kline(symbol, trade_date)
         if not rows:
@@ -270,13 +303,20 @@ def _fetch_fallback_quotes(
 
 
 def _fetch_quote_page(
-    page: int, page_size: int, fields: str, fs: str
+    page: int,
+    page_size: int,
+    fields: str,
+    fs: str,
+    strategy_config: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     query = (
         f"pn={page}&pz={page_size}&po=1&np=1&ut={EASTMONEY_UT}"
         f"&fltt=2&invt=2&fid=f6&fs={fs}&fields={fields}"
     )
-    return _get_json(f"https://push2.eastmoney.com/api/qt/clist/get?{query}")
+    return _get_json(
+        f"https://push2.eastmoney.com/api/qt/clist/get?{query}",
+        strategy_config=strategy_config,
+    )
 
 
 def _build_snapshot_report(
@@ -285,11 +325,15 @@ def _build_snapshot_report(
     requested_trade_date: str | None,
     *,
     progress: Callable[[str, dict[str, Any]], None] | None = None,
+    strategy_config: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    strategy_config = strategy_config or DEFAULT_STRATEGY_CONFIG
     history_rows = []
     kline_attempt_count = 0
     kline_success_count = 0
-    preliminary_acquisition = _data_acquisition_summary(quotes)
+    preliminary_acquisition = _data_acquisition_summary(
+        quotes, strategy_config=strategy_config
+    )
     if preliminary_acquisition["quality_state"] != "usable":
         _progress(
             progress,
@@ -307,24 +351,49 @@ def _build_snapshot_report(
             trade_date,
             requested_trade_date,
             acquisition=preliminary_acquisition,
+            strategy_config=strategy_config,
         )
-    environment = build_market_environment(quotes, trade_date, progress=progress)
+    environment = build_market_environment(
+        quotes, trade_date, progress=progress, strategy_config=strategy_config
+    )
+    min_entry_amount = get_float(
+        strategy_config, "quote_screen.min_entry_amount", 80_000_000
+    )
+    max_abs_pct_change = get_float(
+        strategy_config, "quote_screen.max_abs_pct_change", 8.0
+    )
+    require_close_above_open = get_bool(
+        strategy_config, "quote_screen.require_close_above_open", True
+    )
+    max_kline_screen_symbols = get_int(
+        strategy_config, "quote_screen.max_kline_screen_symbols", 12
+    )
+    max_signal_rows = get_int(strategy_config, "quote_screen.max_signal_rows", 12)
+    recommendation_limit = get_int(
+        strategy_config, "quote_screen.recommendation_limit", 5
+    )
+    watchlist_limit = get_int(strategy_config, "quote_screen.watchlist_limit", 10)
+    min_history_days = get_int(strategy_config, "technical.min_history_days", 60)
+    kline_delay = get_float(
+        strategy_config, "data_quality.kline_request_delay_seconds", 0.1
+    )
+    min_risk_reward = get_float(strategy_config, "risk_preference.min_risk_reward", 1.5)
     liquid = [
         row
         for row in quotes
-        if row["amount"] >= 80_000_000
-        and -8 <= row["pct_change"] <= 8
-        and row["close"] > row["open"]
+        if row["amount"] >= min_entry_amount
+        and -max_abs_pct_change <= row["pct_change"] <= max_abs_pct_change
+        and (not require_close_above_open or row["close"] > row["open"])
     ]
     _progress(
         progress,
         "kline_screen_start",
-        {"eligible_quotes": len(liquid), "max_attempts": MAX_KLINE_SCREEN_SYMBOLS},
+        {"eligible_quotes": len(liquid), "max_attempts": max_kline_screen_symbols},
     )
     for quote in sorted(liquid, key=lambda item: item["amount"], reverse=True)[
-        :MAX_KLINE_SCREEN_SYMBOLS
+        :max_kline_screen_symbols
     ]:
-        time.sleep(0.1)
+        time.sleep(kline_delay)
         kline_attempt_count += 1
         _progress(
             progress,
@@ -332,20 +401,24 @@ def _build_snapshot_report(
             {
                 "symbol": quote["symbol"],
                 "attempt": kline_attempt_count,
-                "max_attempts": MAX_KLINE_SCREEN_SYMBOLS,
+                "max_attempts": max_kline_screen_symbols,
             },
         )
-        history = _fetch_kline(quote["symbol"], trade_date)
-        if len(history) < 60:
+        history = _fetch_kline(quote["symbol"], trade_date, strategy_config)
+        if len(history) < min_history_days:
             continue
         kline_success_count += 1
-        signal = _technical_signal(quote, history)
+        signal = _technical_signal(quote, history, strategy_config)
         if signal["status"] != "rejected":
             history_rows.append(signal)
-        if len(history_rows) >= 12:
+        if len(history_rows) >= max_signal_rows:
             break
-    recommendations = [row for row in history_rows if row["status"] == "candidate"][:5]
-    watchlist = [row for row in history_rows if row["status"] == "watchlist"][:10]
+    recommendations = [row for row in history_rows if row["status"] == "candidate"][
+        :recommendation_limit
+    ]
+    watchlist = [row for row in history_rows if row["status"] == "watchlist"][
+        :watchlist_limit
+    ]
     planned_symbols = [row["symbol"] for row in recommendations]
     watchlist_symbols = [row["symbol"] for row in watchlist]
     report = {
@@ -365,7 +438,9 @@ def _build_snapshot_report(
             kline_attempt_count=kline_attempt_count,
             kline_success_count=kline_success_count,
             market_environment=environment,
+            strategy_config=strategy_config,
         ),
+        "strategy_config": summarize_strategy_config(strategy_config),
         "decision_boundary": _decision_boundary(
             "public quote/kline snapshot; verify broker data before trading"
         ),
@@ -373,7 +448,7 @@ def _build_snapshot_report(
         "market_state": environment["market_state"],
         "sector_scope": environment["sector_scope"],
         "selection_summary": {
-            "min_risk_reward": 1.5,
+            "min_risk_reward": min_risk_reward,
             "planned_symbols": planned_symbols,
             "watchlist_symbols": watchlist_symbols,
             "recommendation_count": len(recommendations),
@@ -401,10 +476,12 @@ def _degraded_snapshot_report(
     requested_trade_date: str | None,
     *,
     acquisition: dict[str, Any],
+    strategy_config: dict[str, Any],
 ) -> dict[str, Any]:
     environment = unavailable_market_environment(
         trade_date, "market data coverage is insufficient"
     )
+    min_risk_reward = get_float(strategy_config, "risk_preference.min_risk_reward", 1.5)
     report = {
         "schema_version": "a-share-monitor.real-snapshot.v1",
         "status": "DATA_DEGRADED",
@@ -418,6 +495,7 @@ def _degraded_snapshot_report(
             "fallback_to_fixture": False,
         },
         "data_acquisition": acquisition,
+        "strategy_config": summarize_strategy_config(strategy_config),
         "decision_boundary": _decision_boundary(
             "market data coverage is insufficient for a buy recommendation; "
             "return control to the user and retry later"
@@ -426,7 +504,7 @@ def _degraded_snapshot_report(
         "market_state": environment["market_state"],
         "sector_scope": environment["sector_scope"],
         "selection_summary": {
-            "min_risk_reward": 1.5,
+            "min_risk_reward": min_risk_reward,
             "planned_symbols": [],
             "watchlist_symbols": [],
             "recommendation_count": 0,
@@ -459,12 +537,16 @@ def _data_acquisition_summary(
     kline_success_count: int = 0,
     market_environment: dict[str, Any] | None = None,
     error: str | None = None,
+    strategy_config: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    strategy_config = strategy_config or DEFAULT_STRATEGY_CONFIG
     source_counts = Counter(str(row.get("source") or "unknown") for row in quotes)
     primary_quote_count = source_counts.get(
         "tencent_batch_quote", 0
     ) + source_counts.get("eastmoney_quote", 0)
-    minimum_full_market_quotes = 500
+    minimum_full_market_quotes = get_int(
+        strategy_config, "data_quality.minimum_full_market_quotes", 500
+    )
     if not quotes:
         quality_state = "unavailable"
     elif primary_quote_count >= minimum_full_market_quotes:
@@ -527,10 +609,18 @@ def _data_acquisition_summary(
         "kline_attempt_count": kline_attempt_count,
         "kline_success_count": kline_success_count,
         "retry_policy": {
-            "http_attempts_per_request": HTTP_ATTEMPTS,
-            "http_timeout_seconds": HTTP_TIMEOUT_SECONDS,
-            "fallback_trade_date_walk_days": 8,
-            "fallback_probe_limit": FALLBACK_PROBE_LIMIT,
+            "http_attempts_per_request": get_int(
+                strategy_config, "data_quality.http_attempts_per_request", 2
+            ),
+            "http_timeout_seconds": get_int(
+                strategy_config, "data_quality.http_timeout_seconds", 12
+            ),
+            "fallback_trade_date_walk_days": get_int(
+                strategy_config, "data_quality.fallback_trade_date_walk_days", 8
+            ),
+            "fallback_probe_limit": get_int(
+                strategy_config, "data_quality.fallback_probe_limit", 3
+            ),
             "fixture_fallback": False,
         },
         "failure_action": "return_control_to_root_and_user",
@@ -539,33 +629,84 @@ def _data_acquisition_summary(
 
 
 def _technical_signal(
-    quote: dict[str, Any], rows: list[dict[str, Any]]
+    quote: dict[str, Any],
+    rows: list[dict[str, Any]],
+    strategy_config: dict[str, Any],
 ) -> dict[str, Any]:
     closes = [float(row["close"]) for row in rows]
     highs = [float(row["high"]) for row in rows]
     lows = [float(row["low"]) for row in rows]
     close = closes[-1]
-    ema5 = _ema(closes, 5)
-    ema10 = _ema(closes, 10)
-    ema20 = _ema(closes, 20)
-    ema60 = _ema(closes, 60)
-    atr14 = _atr(highs, lows, closes, 14)
-    trend = (
-        close > ema20 and ema20 >= ema60 * 0.995 and close >= ema5 and close >= ema10
+    ema_fast_window = get_int(strategy_config, "technical.ema_fast", 5)
+    ema_mid_window = get_int(strategy_config, "technical.ema_mid", 10)
+    ema_trend_window = get_int(strategy_config, "technical.ema_trend", 20)
+    ema_long_window = get_int(strategy_config, "technical.ema_long", 60)
+    atr_window = get_int(strategy_config, "technical.atr_window", 14)
+    ema_fast = ema(closes, ema_fast_window)
+    ema_mid = ema(closes, ema_mid_window)
+    ema_trend = ema(closes, ema_trend_window)
+    ema_long = ema(closes, ema_long_window)
+    atr_value = atr(highs, lows, closes, atr_window)
+    ema_long_tolerance = get_float(
+        strategy_config, "technical.ema_long_tolerance", 0.995
     )
-    near_ma20 = abs(close / ema20 - 1) <= 0.08
+    near_trend_ema_pct = get_float(
+        strategy_config, "technical.near_trend_ema_pct", 0.08
+    )
+    entry_atr_buffer = get_float(strategy_config, "technical.entry_atr_buffer", 0.2)
+    stop_atr_buffer = get_float(strategy_config, "technical.stop_atr_buffer", 0.35)
+    stop_lookback_days = get_int(strategy_config, "technical.stop_lookback_days", 10)
+    target_lookback_days = get_int(
+        strategy_config, "technical.target_lookback_days", 20
+    )
+    target_risk_multiple = get_float(
+        strategy_config, "technical.target_risk_multiple", 1.6
+    )
+    min_price_risk_pct = get_float(
+        strategy_config, "technical.min_price_risk_pct", 0.01
+    )
+    min_risk_reward = get_float(strategy_config, "risk_preference.min_risk_reward", 1.5)
+    trend = (
+        close > ema_trend
+        and ema_trend >= ema_long * ema_long_tolerance
+        and close >= ema_fast
+        and close >= ema_mid
+    )
+    near_ma20 = abs(close / ema_trend - 1) <= near_trend_ema_pct
     if not trend:
         return _watch_or_reject(
-            quote, close, ema20, ema60, "technical_signal_not_ready"
+            quote,
+            close,
+            ema_trend,
+            ema_long,
+            "technical_signal_not_ready",
+            strategy_config,
         )
-    stop = round(max(min(lows[-10:]), ema20 - atr14 * 0.35), 2)
-    entry_upper = round(close + atr14 * 0.2, 2)
-    risk = max(entry_upper - stop, close * 0.01)
-    target = round(max(max(highs[-20:]), entry_upper + risk * 1.6), 2)
+    stop = round(
+        max(
+            min(lows[-stop_lookback_days:]),
+            ema_trend - atr_value * stop_atr_buffer,
+        ),
+        2,
+    )
+    entry_upper = round(close + atr_value * entry_atr_buffer, 2)
+    risk = max(entry_upper - stop, close * min_price_risk_pct)
+    target = round(
+        max(
+            max(highs[-target_lookback_days:]),
+            entry_upper + risk * target_risk_multiple,
+        ),
+        2,
+    )
     risk_reward = round((target - entry_upper) / risk, 4)
-    if risk_reward <= 1.5 or not near_ma20:
+    if risk_reward <= min_risk_reward or not near_ma20:
         return _watch_or_reject(
-            quote, close, ema20, ema60, "risk_reward_or_entry_not_ready"
+            quote,
+            close,
+            ema_trend,
+            ema_long,
+            "risk_reward_or_entry_not_ready",
+            strategy_config,
         )
     return {
         "status": "candidate",
@@ -577,7 +718,7 @@ def _technical_signal(
         "pct_change": quote["pct_change"],
         "amount": round(quote["amount"], 2),
         "main_net_inflow": round(quote["main_net_inflow"], 2),
-        "entry_zone": [round(close - atr14 * 0.2, 2), entry_upper],
+        "entry_zone": [round(close - atr_value * entry_atr_buffer, 2), entry_upper],
         "technical_exit_price": stop,
         "technical_exit_reason": "exit if price closes below the stop or loses EMA20 support",
         "fundamental_exit_trigger": "review and exit on material negative announcements, earnings downgrade, or regulatory risk",
@@ -585,14 +726,26 @@ def _technical_signal(
         "time_exit_rule": "if no upside confirmation within 3-5 trading days, move to watchlist",
         "target_1": target,
         "risk_reward": risk_reward,
-        "technical_reason": f"close>{ema20:.2f} EMA20 and EMA20 aligns with EMA60 {ema60:.2f}",
+        "technical_reason": (
+            f"close>{ema_trend:.2f} EMA{ema_trend_window} and "
+            f"EMA{ema_trend_window} aligns with EMA{ema_long_window} "
+            f"{ema_long:.2f}"
+        ),
     }
 
 
 def _watch_or_reject(
-    quote: dict[str, Any], close: float, ema20: float, ema60: float, reason: str
+    quote: dict[str, Any],
+    close: float,
+    ema20: float,
+    ema60: float,
+    reason: str,
+    strategy_config: dict[str, Any],
 ) -> dict[str, Any]:
-    if quote["amount"] < 120_000_000:
+    watchlist_min_amount = get_float(
+        strategy_config, "quote_screen.watchlist_min_amount", 120_000_000
+    )
+    if quote["amount"] < watchlist_min_amount:
         return {"status": "rejected", "symbol": quote["symbol"], "reason": "liquidity"}
     return {
         "status": "watchlist",
@@ -609,6 +762,9 @@ def _watch_or_reject(
 
 def _review_real_snapshot(report: dict[str, Any]) -> dict[str, Any]:
     findings = []
+    min_risk_reward = float(
+        report.get("selection_summary", {}).get("min_risk_reward", 1.5)
+    )
     if report.get("status") == "DATA_DEGRADED":
         findings.append("market_data_coverage_degraded")
     if report.get("data_acquisition", {}).get("quality_state") != "usable":
@@ -629,8 +785,10 @@ def _review_real_snapshot(report: dict[str, Any]) -> dict[str, Any]:
         ):
             if not item.get(field):
                 findings.append(f"{item.get('symbol', 'unknown')}:missing_{field}")
-        if float(item.get("risk_reward") or 0.0) <= 1.5:
-            findings.append(f"{item.get('symbol', 'unknown')}:risk_reward_below_1_5")
+        if float(item.get("risk_reward") or 0.0) <= min_risk_reward:
+            findings.append(
+                f"{item.get('symbol', 'unknown')}:risk_reward_below_threshold"
+            )
     return {
         "status": "pass" if not findings else "fail",
         "findings": findings,
@@ -638,7 +796,11 @@ def _review_real_snapshot(report: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _fetch_kline(symbol: str, end_date: str) -> list[dict[str, float | str]]:
+def _fetch_kline(
+    symbol: str,
+    end_date: str,
+    strategy_config: dict[str, Any] | None = None,
+) -> list[dict[str, float | str]]:
     secid = ("1." if symbol.startswith(("6", "9")) else "0.") + symbol
     query = urllib.parse.urlencode(
         {
@@ -653,20 +815,26 @@ def _fetch_kline(symbol: str, end_date: str) -> list[dict[str, float | str]]:
     )
     try:
         payload = _get_json(
-            f"https://push2his.eastmoney.com/api/qt/stock/kline/get?{query}"
+            f"https://push2his.eastmoney.com/api/qt/stock/kline/get?{query}",
+            strategy_config=strategy_config,
         )
     except RuntimeError:
-        return _fetch_tencent_kline(symbol, end_date)
+        return _fetch_tencent_kline(symbol, end_date, strategy_config)
     rows = payload.get("data", {}).get("klines") or []
     return [_parse_eastmoney_kline(row) for row in rows]
 
 
-def _fetch_tencent_kline(symbol: str, end_date: str) -> list[dict[str, float | str]]:
+def _fetch_tencent_kline(
+    symbol: str,
+    end_date: str,
+    strategy_config: dict[str, Any] | None = None,
+) -> list[dict[str, float | str]]:
     prefix = "sh" if symbol.startswith(("6", "9")) else "sz"
     param = f"{prefix}{symbol},day,2025-01-01,{end_date},400,qfq"
     payload = _get_json(
         "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?"
-        + urllib.parse.urlencode({"param": param})
+        + urllib.parse.urlencode({"param": param}),
+        strategy_config=strategy_config,
     )
     data = payload.get("data", {}).get(f"{prefix}{symbol}", {})
     rows = data.get("qfqday") or data.get("day") or []
@@ -695,19 +863,26 @@ def _fetch_tencent_kline(symbol: str, end_date: str) -> list[dict[str, float | s
     return result
 
 
-def _get_json(url: str) -> dict[str, Any]:
+def _get_json(
+    url: str, *, strategy_config: dict[str, Any] | None = None
+) -> dict[str, Any]:
+    strategy_config = strategy_config or DEFAULT_STRATEGY_CONFIG
+    attempts = get_int(
+        strategy_config, "data_quality.http_attempts_per_request", HTTP_ATTEMPTS
+    )
+    timeout = get_int(
+        strategy_config, "data_quality.http_timeout_seconds", HTTP_TIMEOUT_SECONDS
+    )
     headers = {
         "User-Agent": "Mozilla/5.0 AShareMonitor/0.1",
         "Accept": "application/json,text/plain,*/*",
         "Referer": "https://quote.eastmoney.com/",
     }
     last_error: Exception | None = None
-    for attempt in range(1, HTTP_ATTEMPTS + 1):
+    for attempt in range(1, attempts + 1):
         request = urllib.request.Request(url, headers=headers)
         try:
-            with urllib.request.urlopen(
-                request, timeout=HTTP_TIMEOUT_SECONDS
-            ) as response:
+            with urllib.request.urlopen(request, timeout=timeout) as response:
                 return json.loads(response.read().decode("utf-8"))
         except (urllib.error.URLError, http.client.RemoteDisconnected) as exc:
             last_error = exc
@@ -790,31 +965,6 @@ def _ownership_flow_note(quote: dict[str, Any]) -> str:
     if inflow > 0:
         return "main net inflow is positive in the public quote snapshot"
     return "ownership flow data is incomplete; user should verify institution/retail positioning"
-
-
-def _ema(values: list[float], window: int) -> float:
-    alpha = 2 / (window + 1)
-    result = values[0]
-    for value in values[1:]:
-        result = value * alpha + result * (1 - alpha)
-    return result
-
-
-def _atr(
-    highs: list[float], lows: list[float], closes: list[float], window: int
-) -> float:
-    ranges = []
-    for index, high in enumerate(highs):
-        low = lows[index]
-        if index == 0:
-            ranges.append(high - low)
-            continue
-        previous_close = closes[index - 1]
-        ranges.append(
-            max(high - low, abs(high - previous_close), abs(low - previous_close))
-        )
-    sample = ranges[-window:]
-    return sum(sample) / len(sample)
 
 
 def _previous_weekday(value: date) -> date:
