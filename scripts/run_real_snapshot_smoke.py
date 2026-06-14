@@ -7,6 +7,7 @@ import argparse
 import http.client
 import json
 import os
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -20,6 +21,38 @@ DEFAULT_OUTPUT = PACKAGE_ROOT / "reports" / "real_snapshot_2026-06-12.json"
 DEFAULT_BASE_URL = "https://api.laozhang.ai/v1"
 DEFAULT_MODEL = "gemini-3-flash-preview"
 EASTMONEY_UT = "bd1d9ddb04089700cf9c27f6f7426281"
+FALLBACK_POOL = {
+    "300750": "宁德时代",
+    "002594": "比亚迪",
+    "600519": "贵州茅台",
+    "000858": "五粮液",
+    "601318": "中国平安",
+    "600036": "招商银行",
+    "000333": "美的集团",
+    "601899": "紫金矿业",
+    "600276": "恒瑞医药",
+    "688981": "中芯国际",
+    "688256": "寒武纪",
+    "300059": "东方财富",
+    "002230": "科大讯飞",
+    "002475": "立讯精密",
+    "000651": "格力电器",
+    "600887": "伊利股份",
+    "600030": "中信证券",
+    "000977": "浪潮信息",
+    "300308": "中际旭创",
+    "601138": "工业富联",
+    "002241": "歌尔股份",
+    "300124": "汇川技术",
+    "600031": "三一重工",
+    "601919": "中远海控",
+    "002371": "北方华创",
+    "300760": "迈瑞医疗",
+    "688111": "金山办公",
+    "601012": "隆基绿能",
+    "600309": "万华化学",
+    "600900": "长江电力",
+}
 
 
 def main() -> int:
@@ -42,7 +75,7 @@ def main() -> int:
         return 2
 
     try:
-        quotes = _fetch_a_share_quotes()
+        quotes = _fetch_a_share_quotes(args.trade_date)
         report = _build_snapshot_report(quotes, args.trade_date)
         llm_summary = _call_llm(args.base_url, api_key, args.model, report)
     except (RuntimeError, AssertionError) as exc:
@@ -82,36 +115,66 @@ def main() -> int:
     return 0
 
 
-def _fetch_a_share_quotes() -> list[dict[str, Any]]:
+def _fetch_a_share_quotes(trade_date: str) -> list[dict[str, Any]]:
     fields = "f12,f14,f2,f3,f5,f6,f15,f16,f17,f18,f20,f21,f62"
     fs = "m:1+t:2,m:1+t:23,m:0+t:6,m:0+t:80"
-    first = _fetch_quote_page(1, 100, fields, fs)
-    total = int(first["data"]["total"])
-    rows = list(first["data"]["diff"])
-    for page in range(2, min((total // 100) + 2, 70)):
-        payload = _fetch_quote_page(page, 100, fields, fs)
-        rows.extend(payload["data"].get("diff") or [])
-        if len(rows) >= total:
-            break
-    return [_normalize_quote(row) for row in rows if _is_usable_quote(row)]
+    try:
+        first = _fetch_quote_page(1, 100, fields, fs)
+        total = int(first["data"]["total"])
+        rows = list(first["data"]["diff"])
+        for page in range(2, min((total // 100) + 2, 70)):
+            time.sleep(0.15)
+            payload = _fetch_quote_page(page, 100, fields, fs)
+            rows.extend(payload["data"].get("diff") or [])
+            if len(rows) >= total:
+                break
+        return [_normalize_quote(row) for row in rows if _is_usable_quote(row)]
+    except RuntimeError:
+        return _fetch_fallback_quotes(trade_date)
+
+
+def _fetch_fallback_quotes(trade_date: str) -> list[dict[str, Any]]:
+    quotes = []
+    for symbol, name in FALLBACK_POOL.items():
+        time.sleep(0.12)
+        try:
+            rows = _fetch_kline(symbol, trade_date)
+        except RuntimeError:
+            continue
+        if not rows:
+            continue
+        latest = rows[-1]
+        if latest["date"] != trade_date:
+            continue
+        previous_close = rows[-2]["close"] if len(rows) >= 2 else latest["open"]
+        quotes.append(
+            {
+                "symbol": symbol,
+                "name": name,
+                "close": float(latest["close"]),
+                "pct_change": float(latest["pct_change"]),
+                "volume": float(latest["volume"]),
+                "amount": float(latest["amount"]),
+                "high": float(latest["high"]),
+                "low": float(latest["low"]),
+                "open": float(latest["open"]),
+                "prev_close": float(previous_close),
+                "float_market_cap": 0.0,
+                "main_net_inflow": 0.0,
+                "source": "fallback_kline_pool",
+            }
+        )
+    if not quotes:
+        raise RuntimeError("fallback kline pool returned no usable quotes")
+    return quotes
 
 
 def _fetch_quote_page(
     page: int, page_size: int, fields: str, fs: str
 ) -> dict[str, Any]:
-    query = urllib.parse.urlencode(
-        {
-            "pn": page,
-            "pz": page_size,
-            "po": 1,
-            "np": 1,
-            "ut": EASTMONEY_UT,
-            "fltt": 2,
-            "invt": 2,
-            "fid": "f6",
-            "fs": fs,
-            "fields": fields,
-        }
+    query = (
+        f"pn={page}&pz={page_size}&po=1&np=1&ut={EASTMONEY_UT}"
+        f"&fltt=2&invt=2&fid=f6&fs={fs}&fields={fields}"
     )
     return _get_json(f"https://push2.eastmoney.com/api/qt/clist/get?{query}")
 
@@ -128,7 +191,11 @@ def _build_snapshot_report(
     ]
     history_rows = []
     for quote in sorted(liquid, key=lambda item: item["amount"], reverse=True)[:80]:
-        history = _fetch_kline(quote["symbol"], trade_date)
+        time.sleep(0.12)
+        try:
+            history = _fetch_kline(quote["symbol"], trade_date)
+        except RuntimeError:
+            continue
         if len(history) >= 60:
             signal = _technical_signal(quote, history)
             if signal["status"] != "rejected":
@@ -169,9 +236,12 @@ def _fetch_kline(symbol: str, end_date: str) -> list[dict[str, float | str]]:
             "end": end_date.replace("-", ""),
         }
     )
-    payload = _get_json(
-        f"https://push2his.eastmoney.com/api/qt/stock/kline/get?{query}"
-    )
+    try:
+        payload = _get_json(
+            f"https://push2his.eastmoney.com/api/qt/stock/kline/get?{query}"
+        )
+    except RuntimeError:
+        return _fetch_tencent_kline(symbol, end_date)
     rows = payload.get("data", {}).get("klines") or []
     result = []
     for row in rows:
@@ -189,6 +259,38 @@ def _fetch_kline(symbol: str, end_date: str) -> list[dict[str, float | str]]:
                 "turnover": float(parts[10]),
             }
         )
+    return result
+
+
+def _fetch_tencent_kline(symbol: str, end_date: str) -> list[dict[str, float | str]]:
+    prefix = "sh" if symbol.startswith(("6", "9")) else "sz"
+    param = f"{prefix}{symbol},day,2025-01-01,{end_date},400,qfq"
+    query = urllib.parse.urlencode({"param": param})
+    payload = _get_json(f"https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?{query}")
+    data = payload.get("data", {}).get(f"{prefix}{symbol}", {})
+    rows = data.get("qfqday") or data.get("day") or []
+    result = []
+    previous_close = 0.0
+    for row in rows:
+        date, open_price, close, high, low, volume = row[:6]
+        close_value = float(close)
+        pct_change = (
+            ((close_value / previous_close) - 1) * 100 if previous_close else 0.0
+        )
+        result.append(
+            {
+                "date": date,
+                "open": float(open_price),
+                "close": close_value,
+                "high": float(high),
+                "low": float(low),
+                "volume": float(volume),
+                "amount": float(volume) * close_value,
+                "pct_change": pct_change,
+                "turnover": 0.0,
+            }
+        )
+        previous_close = close_value
     return result
 
 
@@ -323,12 +425,24 @@ def _call_llm(base_url: str, api_key: str, model: str, report: dict[str, Any]) -
 
 
 def _get_json(url: str) -> dict[str, Any]:
-    request = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-    try:
-        with urllib.request.urlopen(request, timeout=45) as response:
-            return json.loads(response.read().decode("utf-8"))
-    except (urllib.error.URLError, http.client.RemoteDisconnected) as exc:
-        raise RuntimeError(f"market data request failed: {exc}") from exc
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126 Safari/537.36"
+        ),
+        "Accept": "application/json,text/plain,*/*",
+        "Referer": "https://quote.eastmoney.com/",
+    }
+    last_error: Exception | None = None
+    for attempt in range(1, 4):
+        request = urllib.request.Request(url, headers=headers)
+        try:
+            with urllib.request.urlopen(request, timeout=45) as response:
+                return json.loads(response.read().decode("utf-8"))
+        except (urllib.error.URLError, http.client.RemoteDisconnected) as exc:
+            last_error = exc
+            time.sleep(0.6 * attempt)
+    raise RuntimeError(f"market data request failed after retries: {last_error}")
 
 
 def _normalize_quote(row: dict[str, Any]) -> dict[str, Any]:
