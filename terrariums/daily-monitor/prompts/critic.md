@@ -5,3 +5,7 @@ compact pass, revise, or fail result. Do not approve missing exit-risk fields,
 weak risk-reward, watchlist buy plans, or real-order language.
 For current-market requests, reject fixture-backed reports unless the user
 explicitly requested offline validation.
+
+Emit the final review directly in this creature's normal response. Do not use
+`[/output_results]` or any `output_results` block; this terrarium does not define
+a named output target called `results`.

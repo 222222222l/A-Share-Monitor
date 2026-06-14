@@ -13,7 +13,11 @@ terrarium:
 
     - name: regime
       base_config: ../../creatures/lab-runner/
+      no_inherit: [tools]
       system_prompt_file: prompts/regime.md
+      tools:
+        - think
+        - stop_task
       output_wiring:
         - to: screen
       channels:
@@ -22,7 +26,11 @@ terrarium:
 
     - name: screen
       base_config: ../../creatures/lab-runner/
+      no_inherit: [tools]
       system_prompt_file: prompts/screen.md
+      tools:
+        - think
+        - stop_task
       output_wiring:
         - to: risk
       channels:
@@ -31,7 +39,11 @@ terrarium:
 
     - name: risk
       base_config: ../../creatures/lab-runner/
+      no_inherit: [tools]
       system_prompt_file: prompts/risk.md
+      tools:
+        - think
+        - stop_task
       output_wiring:
         - to: recommendation
       channels:
@@ -40,7 +52,11 @@ terrarium:
 
     - name: recommendation
       base_config: ../../creatures/lab-runner/
+      no_inherit: [tools]
       system_prompt_file: prompts/recommendation.md
+      tools:
+        - think
+        - stop_task
       output_wiring:
         - to: critic
       channels:
@@ -50,8 +66,6 @@ terrarium:
     - name: critic
       base_config: ../../creatures/strategy-critic/
       system_prompt_file: prompts/critic.md
-      output_wiring:
-        - to: results
       channels:
         listen: [results, status]
         can_send: [results]

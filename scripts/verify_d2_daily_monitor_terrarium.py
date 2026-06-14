@@ -9,7 +9,6 @@ from pathlib import Path
 
 import yaml
 
-
 SCRIPT_ROOT = Path(__file__).resolve().parent
 PACKAGE_ROOT = SCRIPT_ROOT.parent
 DEFAULT_REPO_ROOT = PACKAGE_ROOT.parent.parent
@@ -35,7 +34,22 @@ def verify(repo_root: Path) -> dict:
     }
     for source, target in zip(EXPECTED_CHAIN, EXPECTED_CHAIN[1:]):
         check(wiring.get(source) == [target], f"missing edge {source}->{target}")
-    check(wiring.get("critic") == ["results"], "critic must route to results")
+    check(wiring.get("critic") == [], "critic must emit final output directly")
+
+    for item in creatures:
+        if item["name"] in {"data", "critic"}:
+            continue
+        tools = item.get("tools", [])
+        tool_names = [
+            tool if isinstance(tool, str) else tool.get("name") for tool in tools
+        ]
+        check(
+            "tools" in item.get("no_inherit", []), f"{item['name']} must drop lab tools"
+        )
+        check(
+            "generate_a_share_report" not in tool_names,
+            f"{item['name']} must not fetch market data",
+        )
 
     prompts = TERRARIUM_PATH.parent / "prompts"
     for item in creatures:
