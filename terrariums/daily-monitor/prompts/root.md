@@ -18,6 +18,9 @@ daily_monitor_request:
   entry_node: data
 [group_send/]
 
+The YAML body is the `message` for `group_send`; do not use a `content`
+argument.
+
 After dispatching, keep any user-visible acknowledgement to one short sentence.
 
 Gate control:

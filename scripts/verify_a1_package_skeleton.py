@@ -38,8 +38,8 @@ def verify(repo_root: Path) -> dict:
     )
     if manifest.get("name") != "a-share-monitor":
         raise AssertionError("manifest name must be a-share-monitor")
-    if manifest.get("version") != "0.1.4":
-        raise AssertionError("manifest version must be 0.1.4")
+    if manifest.get("version") != "0.1.5":
+        raise AssertionError("manifest version must be 0.1.5")
 
     creatures = manifest.get("creatures") or []
     creature_names = {entry.get("name") for entry in creatures}
