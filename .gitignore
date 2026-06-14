@@ -20,6 +20,7 @@ env/
 *.log
 *.tmp
 *.bak
+reports/
 
 .DS_Store
 Thumbs.db

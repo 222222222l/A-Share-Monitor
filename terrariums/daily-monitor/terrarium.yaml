@@ -1,0 +1,62 @@
+terrarium:
+  name: daily-monitor
+
+  creatures:
+    - name: data
+      base_config: ../../creatures/lab-runner/
+      system_prompt_file: prompts/data.md
+      output_wiring:
+        - to: regime
+      channels:
+        listen: [tasks]
+        can_send: [status]
+
+    - name: regime
+      base_config: ../../creatures/lab-runner/
+      system_prompt_file: prompts/regime.md
+      output_wiring:
+        - to: screen
+      channels:
+        listen: [status]
+        can_send: [status]
+
+    - name: screen
+      base_config: ../../creatures/lab-runner/
+      system_prompt_file: prompts/screen.md
+      output_wiring:
+        - to: risk
+      channels:
+        listen: [status]
+        can_send: [status]
+
+    - name: risk
+      base_config: ../../creatures/lab-runner/
+      system_prompt_file: prompts/risk.md
+      output_wiring:
+        - to: recommendation
+      channels:
+        listen: [status]
+        can_send: [status]
+
+    - name: recommendation
+      base_config: ../../creatures/lab-runner/
+      system_prompt_file: prompts/recommendation.md
+      output_wiring:
+        - to: critic
+      channels:
+        listen: [status]
+        can_send: [results, status]
+
+    - name: critic
+      base_config: ../../creatures/strategy-critic/
+      system_prompt_file: prompts/critic.md
+      output_wiring:
+        - to: results
+      channels:
+        listen: [results, status]
+        can_send: [results]
+
+  channels:
+    tasks: { type: queue }
+    status: { type: broadcast }
+    results: { type: queue }

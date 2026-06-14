@@ -699,37 +699,44 @@ trade_signal -> paper_order -> broker_adapter -> order_status -> audit_log
   - 完成标准：只在 C2 放行板块内读取股票池和候选个股；只允许明确右侧信号进入候选，例如强趋势回踩和平台突破；不交易左侧抄底、赌底部或未确认反转，`oversold_reversal` 不得作为买入候选；散户 / 机构对手盘信号作为确认层和风险层；技术面尚未达标但基础条件通过的个股进入 `watchlist`，用于后续增量跟踪。
   - 备注：已新增 `a_share_monitor/strategy/stock_screen.py` 与 `verify_c3_stock_screen.py`；C3 不读取完整数据集，不读取基本面风险事件，基本面风险保留到最终建议阶段作为用户判断用的保险提示；当前输出分为 `candidate`、`watchlist`、`rejected` 三类。
 
-- [ ] `C4` 实现风险收益比与仓位计算
-  - 状态：待开始
+- [x] `C4` 实现风险收益比与仓位计算
+  - 状态：已完成
   - 完成标准：所有买入候选必须满足 `risk_reward > 1.5`，并输出技术面卖出风险价位、风险价依据、基本面风险触发条件、对手盘风险提示和时间止损规则
+  - 备注：已新增 `a_share_monitor/strategy/risk_plan.py`、`verify_c4_risk_plan.py` 与 `verify_c_group_technical_screening.py`；C4 只对 C3 的 `candidate` 生成买入计划，基本面风险只在最终计划阶段读取并作为用户判断用的风险提示，`watchlist` 不输出买入建议。
 
 ### 任务组 D. Agent 与 Terrarium
 
-- [ ] `D1` 创建最小单 creature 分析入口
-  - 状态：待开始
+- [x] `D1` 创建最小单 creature 分析入口
+  - 状态：已完成
   - 完成标准：能读取 fixture 并生成结构化候选报告
+  - 备注：已新增 `a_share_monitor/reporting/structured_report.py`、`generate_a_share_report` 自定义工具、`generate_d1_structured_report.py` 与 `verify_d1_structured_report.py`；`lab-runner` 可从 fixture 生成 `a-share-monitor.report.v1` 结构化候选报告。
 
-- [ ] `D2` 创建最小 terrarium
-  - 状态：待开始
+- [x] `D2` 创建最小 terrarium
+  - 状态：已完成
   - 完成标准：完成 `data -> regime -> screen -> risk -> recommendation -> critic` 的最短链路
+  - 备注：已新增 `terrariums/daily-monitor/terrarium.yaml` 与对应 prompts，并在 `kohaku.yaml` 注册 `daily-monitor`。
 
-- [ ] `D3` 添加策略审查 critic
-  - 状态：待开始
+- [x] `D3` 添加策略审查 critic
+  - 状态：已完成
   - 完成标准：能拒绝盈亏比不足、缺少卖出风险价位、数据缺失、追高、一字板和风险偏好冲突的建议
+  - 备注：已新增 `strategy-critic` creature 与 deterministic critic review；`verify_d3_strategy_critic.py` 覆盖低盈亏比、缺少卖出风险价位、观察列表买入计划和真实交易边界。
 
 ### 任务组 E. 验证与回测
 
-- [ ] `E1` 建立最小离线验证脚本
-  - 状态：待开始
+- [x] `E1` 建立最小离线验证脚本
+  - 状态：已完成
   - 完成标准：无网络运行，验证 schema、fixture、技术指标、背离形态、策略输出、风险收益比、卖出风险价位和拒绝原因
+  - 备注：已新增 `verify_all_offline.py`，聚合 A1、B1-B3、C0-C4、D1-D3、E2、E3 的离线验证。
 
-- [ ] `E2` 建立简单事件驱动回测
-  - 状态：待开始
+- [x] `E2` 建立简单事件驱动回测
+  - 状态：已完成
   - 完成标准：考虑 T+1、涨跌停、交易成本、滑点和无法成交
+  - 备注：已新增 `a_share_monitor/backtest/event_backtest.py` 与 `verify_e2_event_backtest.py`，覆盖 T+1 当日不可卖、滑点、佣金、目标价退出和最大不利波动。
 
-- [ ] `E3` 建立 paper trading 日志格式
-  - 状态：待开始
+- [x] `E3` 建立 paper trading 日志格式
+  - 状态：已完成
   - 完成标准：能记录信号、计划、模拟订单、成交假设、持仓和退出原因
+  - 备注：已新增 `a_share_monitor/backtest/paper_trading.py` 与 `verify_e3_paper_trading_log.py`；日志格式保持 `real_trading_enabled=false`，只记录纸面计划和审计边界。
 
 ### 任务组 F. 外部数据源与交易扩展
 
@@ -750,15 +757,14 @@ trade_signal -> paper_order -> broker_adapter -> order_status -> audit_log
 下一项任务：
 
 ```text
-C4 实现风险收益比与仓位计算
+真实快照全流程测试 / F 组暂缓
 ```
 
 理由：
 
-- schema、fixture 与 fixture adapter 已经存在。
-- 市场状态层 C1、板块强度层 C2、右侧股票筛选 / 观察列表层 C3 与候选技术指标层 C0 已经完成。
-- 下一步应进入 C4 风险收益比、仓位和卖出风险价位计算。
-- C4 只能对 `candidate` 生成买入计划；`watchlist` 仍只做增量跟踪，不输出买入建议。
+- 任务组 A-E 已完成 package 骨架、离线数据、策略筛选、agent/terrarium 包装、验证回测与 paper log 基础闭环。
+- F 组外部数据源与交易扩展暂缓，不在当前阶段接入正式 AkShare / baostock / broker adapter。
+- 下一步先基于 2026-06-12 周五收盘公开行情快照做一次全流程真实数据 smoke test，并用临时 OpenAI-compatible API 生成用户可读结构化摘要。
 
 ## 14. 每项任务完成规则
 

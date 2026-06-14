@@ -297,7 +297,7 @@ record_types:
       - ownership_flow_signal
     field_rules:
       setup_type: trend_pullback, platform_breakout, or none
-      signal_status: candidate, rejected, or watch_only
+      signal_status: candidate, rejected, or watchlist
 
   recommendation:
     required_fields:

@@ -3,6 +3,11 @@
 from a_share_monitor.strategy.market_state import MarketStateSignal
 from a_share_monitor.strategy.market_state import evaluate_latest_fixture_market_state
 from a_share_monitor.strategy.market_state import evaluate_market_state
+from a_share_monitor.strategy.risk_plan import RiskManagedRecommendation
+from a_share_monitor.strategy.risk_plan import RiskPlanConfig
+from a_share_monitor.strategy.risk_plan import RiskPlanReport
+from a_share_monitor.strategy.risk_plan import evaluate_latest_fixture_risk_plan
+from a_share_monitor.strategy.risk_plan import evaluate_risk_plan
 from a_share_monitor.strategy.sector_strength import SectorStrengthReport
 from a_share_monitor.strategy.sector_strength import SectorStrengthScore
 from a_share_monitor.strategy.sector_strength import (
@@ -24,6 +29,9 @@ from a_share_monitor.strategy.technical_indicators import evaluate_technical_ind
 __all__ = [
     "DivergenceEvidence",
     "MarketStateSignal",
+    "RiskManagedRecommendation",
+    "RiskPlanConfig",
+    "RiskPlanReport",
     "SectorStrengthReport",
     "SectorStrengthScore",
     "StockScreenReport",
@@ -31,10 +39,12 @@ __all__ = [
     "TechnicalAnalysisReport",
     "TechnicalIndicatorSnapshot",
     "evaluate_latest_fixture_market_state",
+    "evaluate_latest_fixture_risk_plan",
     "evaluate_latest_fixture_sector_strength",
     "evaluate_latest_fixture_stock_screen",
     "evaluate_latest_fixture_technical_indicators",
     "evaluate_market_state",
+    "evaluate_risk_plan",
     "evaluate_sector_strength",
     "evaluate_stock_screen",
     "evaluate_technical_indicators",

@@ -1,0 +1,15 @@
+name: strategy-critic
+description: A-share recommendation critic for risk and policy guardrails
+
+controller:
+  temperature: 0.1
+
+system_prompt_file: prompts/system.md
+
+tools:
+  - read
+  - glob
+  - grep
+  - json_read
+  - think
+  - stop_task

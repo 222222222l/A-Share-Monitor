@@ -13,3 +13,7 @@ tools:
   - json_read
   - think
   - stop_task
+  - name: generate_a_share_report
+    type: custom
+    module: ./tools/a_share_report.py
+    class: AShareReportTool

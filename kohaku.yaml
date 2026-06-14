@@ -16,8 +16,12 @@ distribution:
 creatures:
   - name: lab-runner
     path: creatures/lab-runner
+  - name: strategy-critic
+    path: creatures/strategy-critic
 
-terrariums: []
+terrariums:
+  - name: daily-monitor
+    path: terrariums/daily-monitor
 skills: []
 tools: []
 plugins: []

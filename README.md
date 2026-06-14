@@ -22,16 +22,20 @@ Initial tradable universe:
 
 ## Current Stage
 
-This package currently contains the A1 skeleton plus B1/B2 validation assets:
+This package currently contains the offline A/B/C validation path:
 
 - package manifest
 - minimal `lab-runner` creature
 - normalized market data schema
 - deterministic synthetic offline fixture
 - fixture-backed normalized data adapter
-- validation scripts for the package skeleton, schema, and fixture
-
-The strategy and data modules will be added in later blueprint tasks.
+- staged market-state, sector-strength, right-side stock screening, technical
+  indicator, and risk-reward planning modules
+- a minimal `lab-runner` creature, `strategy-critic` creature, and
+  `daily-monitor` terrarium for structured report workflows
+- minimal offline validation, event backtest, and paper-trading log helpers
+- validation scripts for the package skeleton, schema, fixture, and C-group
+  technical screening system
 
 Blueprint: `docs/zh-CN/dev/a-share-monitor-blueprint.md`
 
@@ -53,6 +57,25 @@ python -m scripts.verify_c1_market_state --repo-root ../..
 python -m scripts.verify_c2_sector_strength --repo-root ../..
 python -m scripts.verify_c3_stock_screen --repo-root ../..
 python -m scripts.verify_c0_technical_indicators --repo-root ../..
+python -m scripts.verify_c4_risk_plan --repo-root ../..
+python -m scripts.verify_c_group_technical_screening --repo-root ../..
+python -m scripts.verify_d1_structured_report --repo-root ../..
+python -m scripts.verify_d2_daily_monitor_terrarium --repo-root ../..
+python -m scripts.verify_d3_strategy_critic --repo-root ../..
+python -m scripts.verify_e2_event_backtest --repo-root ../..
+python -m scripts.verify_e3_paper_trading_log --repo-root ../..
+python -m scripts.verify_all_offline --repo-root ../..
+python -m scripts.generate_d1_structured_report
+```
+
+Optional LLM smoke test for structured user-facing report generation:
+
+```bash
+cd examples/a-share-monitor
+set A_SHARE_MONITOR_API_KEY=<temporary-key>
+python -m scripts.smoke_d_group_llm_report \
+  --base-url https://api.laozhang.ai/v1 \
+  --model gemini-3-flash-preview
 ```
 
 ## Safety Boundary

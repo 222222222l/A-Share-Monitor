@@ -43,8 +43,17 @@ def verify(repo_root: Path) -> dict:
         raise AssertionError("manifest version must be 0.1.0")
 
     creatures = manifest.get("creatures") or []
-    if creatures != [{"name": "lab-runner", "path": "creatures/lab-runner"}]:
-        raise AssertionError("manifest must expose only lab-runner in A1")
+    creature_names = {entry.get("name") for entry in creatures}
+    if "lab-runner" not in creature_names:
+        raise AssertionError("manifest must expose lab-runner")
+    for entry in creatures:
+        path = entry.get("path")
+        if not path or not (PACKAGE_ROOT / path).exists():
+            raise AssertionError(f"manifest creature path missing: {path}")
+    for entry in manifest.get("terrariums") or []:
+        path = entry.get("path")
+        if not path or not (PACKAGE_ROOT / path).exists():
+            raise AssertionError(f"manifest terrarium path missing: {path}")
 
     config = yaml.safe_load(
         (PACKAGE_ROOT / "creatures" / "lab-runner" / "config.yaml").read_text(
@@ -54,8 +63,9 @@ def verify(repo_root: Path) -> dict:
     if config.get("name") != "lab-runner":
         raise AssertionError("lab-runner config name mismatch")
     tools = config.get("tools") or []
+    tool_names = {item if isinstance(item, str) else item.get("name") for item in tools}
     for tool_name in ("read", "glob", "grep", "json_read", "think", "stop_task"):
-        if tool_name not in tools:
+        if tool_name not in tool_names:
             raise AssertionError(f"lab-runner missing tool: {tool_name}")
 
     blueprint = repo_root / "docs" / "zh-CN" / "dev" / "a-share-monitor-blueprint.md"
