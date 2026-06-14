@@ -16,6 +16,9 @@ from datetime import timedelta
 from typing import Any, Callable
 from zoneinfo import ZoneInfo
 
+from a_share_monitor.reporting.tencent_quote import TENCENT_BATCH_SIZE
+from a_share_monitor.reporting.tencent_quote import fetch_tencent_universe_quotes
+
 EASTMONEY_UT = "bd1d9ddb04089700cf9c27f6f7426281"
 CHINA_TZ = ZoneInfo("Asia/Shanghai")
 HTTP_ATTEMPTS = 2
@@ -117,6 +120,27 @@ def resolve_market_date(requested_trade_date: str | None = None) -> str:
 def _fetch_a_share_quotes(
     trade_date: str, *, progress: Callable[[str, dict[str, Any]], None] | None = None
 ) -> list[dict[str, Any]]:
+    _progress(
+        progress,
+        "quote_source_start",
+        {"source": "tencent_batch_quote", "batch_size": TENCENT_BATCH_SIZE},
+    )
+    try:
+        quotes = fetch_tencent_universe_quotes(progress=progress)
+        if quotes:
+            _progress(
+                progress,
+                "quote_source_done",
+                {"source": "tencent_batch_quote", "usable_quotes": len(quotes)},
+            )
+            return quotes
+    except (RuntimeError, ValueError) as exc:
+        _progress(
+            progress,
+            "quote_source_failed",
+            {"source": "tencent_batch_quote", "error": str(exc)},
+        )
+
     fields = "f12,f14,f2,f3,f5,f6,f15,f16,f17,f18,f20,f21,f62"
     fs = "m:1+t:2,m:1+t:23,m:0+t:6,m:0+t:80"
     _progress(progress, "quote_source_start", {"source": "eastmoney_quote"})
@@ -420,7 +444,9 @@ def _data_acquisition_summary(
     error: str | None = None,
 ) -> dict[str, Any]:
     source_counts = Counter(str(row.get("source") or "unknown") for row in quotes)
-    primary_quote_count = source_counts.get("eastmoney_quote", 0)
+    primary_quote_count = source_counts.get(
+        "tencent_batch_quote", 0
+    ) + source_counts.get("eastmoney_quote", 0)
     minimum_full_market_quotes = 500
     if not quotes:
         quality_state = "unavailable"
@@ -430,8 +456,13 @@ def _data_acquisition_summary(
         quality_state = "degraded"
     channels = [
         {
+            "name": "tencent_batch_quote",
+            "purpose": "A-share quote universe, breadth, amount, and price snapshot",
+            "usable_records": source_counts.get("tencent_batch_quote", 0),
+        },
+        {
             "name": "eastmoney_quote",
-            "purpose": "A-share quote universe, breadth, amount, and main flow snapshot",
+            "purpose": "backup A-share quote universe when Tencent batch quote fails",
             "usable_records": source_counts.get("eastmoney_quote", 0),
         },
         {
@@ -674,10 +705,10 @@ def _normalize_quote(row: dict[str, Any]) -> dict[str, Any]:
 
 def _is_usable_quote(row: dict[str, Any]) -> bool:
     try:
-        name = str(row["f14"])
-        close = float(row["f2"])
-        amount = float(row["f6"])
-    except (TypeError, ValueError):
+        name = str(row.get("name") or row["f14"])
+        close = float(row.get("close") or row["f2"])
+        amount = float(row.get("amount") or row["f6"])
+    except (KeyError, TypeError, ValueError):
         return False
     return close > 0 and amount > 0 and "ST" not in name.upper()
 

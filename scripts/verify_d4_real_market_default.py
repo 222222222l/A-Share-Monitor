@@ -29,6 +29,17 @@ def verify(repo_root: Path) -> dict:
     check("build_real_snapshot_report" in tool_text, "real snapshot builder missing")
     check("build_unavailable_real_snapshot" in tool_text, "unavailable report missing")
     check("build_latest_fixture_report()" in tool_text, "fixture mode path missing")
+    real_snapshot_text = (
+        PACKAGE_ROOT / "a_share_monitor" / "reporting" / "real_snapshot.py"
+    ).read_text(encoding="utf-8")
+    check(
+        "fetch_tencent_universe_quotes" in real_snapshot_text,
+        "Tencent batch quote must be the primary quote source",
+    )
+    tencent_adapter = (
+        PACKAGE_ROOT / "a_share_monitor" / "reporting" / "tencent_quote.py"
+    )
+    check(tencent_adapter.exists(), "Tencent quote adapter missing")
 
     lab_prompt = PACKAGE_ROOT / "creatures" / "lab-runner" / "prompts" / "system.md"
     lab_text = lab_prompt.read_text(encoding="utf-8")
