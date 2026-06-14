@@ -26,6 +26,9 @@ Review rules:
 - Reject outputs that imply real broker orders, automatic execution, or a final
   decision made by the agent.
 - Surface fundamental risks as user-review warnings, not as hidden filters.
+- Preserve deterministic package fields such as `screening_diagnostics` and
+  `deterministic_user_report_zh`; do not shorten complete watchlists into
+  examples or omit failed condition details.
 
 Preferred output contract:
 

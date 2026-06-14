@@ -8,7 +8,9 @@ import json
 from pathlib import Path
 
 from a_share_monitor.config import load_strategy_config
+from a_share_monitor.reporting.deterministic_output import attach_deterministic_outputs
 from a_share_monitor.reporting import build_unavailable_real_snapshot
+from a_share_monitor.reporting.real_screening import technical_signal
 from a_share_monitor.reporting import resolve_market_date
 
 SCRIPT_ROOT = Path(__file__).resolve().parent
@@ -68,6 +70,10 @@ def verify(repo_root: Path) -> dict:
     data_text = data_prompt.read_text(encoding="utf-8")
     check("Default to real-market data" in data_text, "data node must default real")
     check("using fixture data" in data_text, "data node must forbid fixture fallback")
+    check(
+        "screening_diagnostics.watchlist" in data_text,
+        "data node must forward deterministic watchlist diagnostics",
+    )
 
     unavailable = build_unavailable_real_snapshot(
         error="test market data failure",
@@ -81,6 +87,10 @@ def verify(repo_root: Path) -> dict:
     )
     check(unavailable["status"] == "DATA_UNAVAILABLE", "status mismatch")
     check(unavailable["strategy_config"]["profile"], "strategy profile missing")
+    check(
+        "deterministic_user_report_zh" in unavailable,
+        "unavailable report missing deterministic user report",
+    )
     check(
         unavailable["data_freshness"]["mode"] == "real",
         "unavailable report must remain real mode",
@@ -115,6 +125,23 @@ def verify(repo_root: Path) -> dict:
     )
     check(acquisition["channels"], "data acquisition channels must be explicit")
     check(resolve_market_date("2026-06-12") == "2026-06-12", "date passthrough")
+    watch_item = _sample_watchlist_signal(strategy_config)
+    check(watch_item["status"] == "watchlist", "sample must produce watchlist")
+    check(watch_item["unmet_conditions"], "watchlist must expose unmet conditions")
+    sample_report = {
+        "status": "PASS",
+        "trade_date": "2026-06-12",
+        "data_freshness": {"mode": "real"},
+        "market": {"universe_size": 1, "advancing_ratio": 0.0, "total_amount": 1},
+        "market_state": {"market_regime": "mixed_chop", "buy_permission": "selective"},
+        "recommendations": [],
+        "watchlist": [watch_item],
+    }
+    attach_deterministic_outputs(sample_report)
+    check(
+        sample_report["screening_diagnostics"]["watchlist"][0]["failed_condition_text"],
+        "deterministic diagnostics must render failed condition text",
+    )
 
     return {
         "status": "PASS",
@@ -123,6 +150,33 @@ def verify(repo_root: Path) -> dict:
         "fallback_to_fixture": unavailable["data_freshness"]["fallback_to_fixture"],
         "failure_action": acquisition["failure_action"],
     }
+
+
+def _sample_watchlist_signal(strategy_config: dict) -> dict:
+    rows = []
+    for index in range(60):
+        close = 100.0 if index < 59 else 99.0
+        rows.append(
+            {
+                "date": f"2026-04-{(index % 28) + 1:02d}",
+                "open": 100.0,
+                "close": close,
+                "high": 101.0,
+                "low": 98.0,
+                "volume": 1_000_000,
+                "amount": 150_000_000,
+                "pct_change": -1.0,
+            }
+        )
+    quote = {
+        "symbol": "600001",
+        "name": "Sample",
+        "close": 99.0,
+        "pct_change": -1.0,
+        "amount": 150_000_000,
+        "main_net_inflow": 0.0,
+    }
+    return technical_signal(quote, rows, strategy_config)
 
 
 def main() -> int:

@@ -6,6 +6,10 @@ weak risk-reward, watchlist buy plans, or real-order language.
 For current-market requests, reject fixture-backed reports unless the user
 explicitly requested offline validation.
 
+Do not rewrite deterministic package output. If `deterministic_user_report_zh`
+or `screening_diagnostics.watchlist` is present, only check it for rule
+violations and preserve the complete watchlist and failed condition details.
+
 Emit the final review directly in this creature's normal response. Do not use
 `[/output_results]`, `output_results`, `[/output_root]`, or `output_root` blocks.
 When the review is complete, it will be routed back to `root` automatically by

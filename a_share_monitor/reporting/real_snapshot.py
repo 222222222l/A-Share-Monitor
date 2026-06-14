@@ -22,10 +22,10 @@ from a_share_monitor.config import get_float
 from a_share_monitor.config import get_int
 from a_share_monitor.config import load_strategy_config
 from a_share_monitor.config import summarize_strategy_config
+from a_share_monitor.reporting.deterministic_output import attach_deterministic_outputs
 from a_share_monitor.reporting.market_environment import build_market_environment
 from a_share_monitor.reporting.market_environment import unavailable_market_environment
-from a_share_monitor.reporting.technical_math import atr
-from a_share_monitor.reporting.technical_math import ema
+from a_share_monitor.reporting.real_screening import technical_signal
 from a_share_monitor.reporting.tencent_quote import TENCENT_BATCH_SIZE
 from a_share_monitor.reporting.tencent_quote import fetch_tencent_universe_quotes
 
@@ -70,7 +70,7 @@ def build_unavailable_real_snapshot(
     resolved_date = resolve_market_date(requested_trade_date)
     environment = unavailable_market_environment(resolved_date, error)
     min_risk_reward = get_float(strategy_config, "risk_preference.min_risk_reward", 1.5)
-    return {
+    report = {
         "schema_version": "a-share-monitor.real-snapshot.v1",
         "status": "DATA_UNAVAILABLE",
         "generated_at": _now().isoformat(),
@@ -110,6 +110,8 @@ def build_unavailable_real_snapshot(
             "confidence": "high",
         },
     }
+    attach_deterministic_outputs(report)
+    return report
 
 
 def resolve_market_date(requested_trade_date: str | None = None) -> str:
@@ -408,7 +410,7 @@ def _build_snapshot_report(
         if len(history) < min_history_days:
             continue
         kline_success_count += 1
-        signal = _technical_signal(quote, history, strategy_config)
+        signal = technical_signal(quote, history, strategy_config)
         if signal["status"] != "rejected":
             history_rows.append(signal)
         if len(history_rows) >= max_signal_rows:
@@ -457,6 +459,7 @@ def _build_snapshot_report(
         "watchlist": watchlist,
     }
     _apply_data_quality_gate(report)
+    attach_deterministic_outputs(report)
     report["critic_review"] = _review_real_snapshot(report)
     _progress(
         progress,
@@ -512,6 +515,7 @@ def _degraded_snapshot_report(
         "recommendations": [],
         "watchlist": [],
     }
+    attach_deterministic_outputs(report)
     report["critic_review"] = _review_real_snapshot(report)
     return report
 
@@ -625,138 +629,6 @@ def _data_acquisition_summary(
         },
         "failure_action": "return_control_to_root_and_user",
         "error": error or "",
-    }
-
-
-def _technical_signal(
-    quote: dict[str, Any],
-    rows: list[dict[str, Any]],
-    strategy_config: dict[str, Any],
-) -> dict[str, Any]:
-    closes = [float(row["close"]) for row in rows]
-    highs = [float(row["high"]) for row in rows]
-    lows = [float(row["low"]) for row in rows]
-    close = closes[-1]
-    ema_fast_window = get_int(strategy_config, "technical.ema_fast", 5)
-    ema_mid_window = get_int(strategy_config, "technical.ema_mid", 10)
-    ema_trend_window = get_int(strategy_config, "technical.ema_trend", 20)
-    ema_long_window = get_int(strategy_config, "technical.ema_long", 60)
-    atr_window = get_int(strategy_config, "technical.atr_window", 14)
-    ema_fast = ema(closes, ema_fast_window)
-    ema_mid = ema(closes, ema_mid_window)
-    ema_trend = ema(closes, ema_trend_window)
-    ema_long = ema(closes, ema_long_window)
-    atr_value = atr(highs, lows, closes, atr_window)
-    ema_long_tolerance = get_float(
-        strategy_config, "technical.ema_long_tolerance", 0.995
-    )
-    near_trend_ema_pct = get_float(
-        strategy_config, "technical.near_trend_ema_pct", 0.08
-    )
-    entry_atr_buffer = get_float(strategy_config, "technical.entry_atr_buffer", 0.2)
-    stop_atr_buffer = get_float(strategy_config, "technical.stop_atr_buffer", 0.35)
-    stop_lookback_days = get_int(strategy_config, "technical.stop_lookback_days", 10)
-    target_lookback_days = get_int(
-        strategy_config, "technical.target_lookback_days", 20
-    )
-    target_risk_multiple = get_float(
-        strategy_config, "technical.target_risk_multiple", 1.6
-    )
-    min_price_risk_pct = get_float(
-        strategy_config, "technical.min_price_risk_pct", 0.01
-    )
-    min_risk_reward = get_float(strategy_config, "risk_preference.min_risk_reward", 1.5)
-    trend = (
-        close > ema_trend
-        and ema_trend >= ema_long * ema_long_tolerance
-        and close >= ema_fast
-        and close >= ema_mid
-    )
-    near_ma20 = abs(close / ema_trend - 1) <= near_trend_ema_pct
-    if not trend:
-        return _watch_or_reject(
-            quote,
-            close,
-            ema_trend,
-            ema_long,
-            "technical_signal_not_ready",
-            strategy_config,
-        )
-    stop = round(
-        max(
-            min(lows[-stop_lookback_days:]),
-            ema_trend - atr_value * stop_atr_buffer,
-        ),
-        2,
-    )
-    entry_upper = round(close + atr_value * entry_atr_buffer, 2)
-    risk = max(entry_upper - stop, close * min_price_risk_pct)
-    target = round(
-        max(
-            max(highs[-target_lookback_days:]),
-            entry_upper + risk * target_risk_multiple,
-        ),
-        2,
-    )
-    risk_reward = round((target - entry_upper) / risk, 4)
-    if risk_reward <= min_risk_reward or not near_ma20:
-        return _watch_or_reject(
-            quote,
-            close,
-            ema_trend,
-            ema_long,
-            "risk_reward_or_entry_not_ready",
-            strategy_config,
-        )
-    return {
-        "status": "candidate",
-        "symbol": quote["symbol"],
-        "name": quote["name"],
-        "decision": "buy_ready",
-        "setup_type": "trend_pullback",
-        "close": close,
-        "pct_change": quote["pct_change"],
-        "amount": round(quote["amount"], 2),
-        "main_net_inflow": round(quote["main_net_inflow"], 2),
-        "entry_zone": [round(close - atr_value * entry_atr_buffer, 2), entry_upper],
-        "technical_exit_price": stop,
-        "technical_exit_reason": "exit if price closes below the stop or loses EMA20 support",
-        "fundamental_exit_trigger": "review and exit on material negative announcements, earnings downgrade, or regulatory risk",
-        "ownership_flow_risk": _ownership_flow_note(quote),
-        "time_exit_rule": "if no upside confirmation within 3-5 trading days, move to watchlist",
-        "target_1": target,
-        "risk_reward": risk_reward,
-        "technical_reason": (
-            f"close>{ema_trend:.2f} EMA{ema_trend_window} and "
-            f"EMA{ema_trend_window} aligns with EMA{ema_long_window} "
-            f"{ema_long:.2f}"
-        ),
-    }
-
-
-def _watch_or_reject(
-    quote: dict[str, Any],
-    close: float,
-    ema20: float,
-    ema60: float,
-    reason: str,
-    strategy_config: dict[str, Any],
-) -> dict[str, Any]:
-    watchlist_min_amount = get_float(
-        strategy_config, "quote_screen.watchlist_min_amount", 120_000_000
-    )
-    if quote["amount"] < watchlist_min_amount:
-        return {"status": "rejected", "symbol": quote["symbol"], "reason": "liquidity"}
-    return {
-        "status": "watchlist",
-        "symbol": quote["symbol"],
-        "name": quote["name"],
-        "close": close,
-        "pct_change": quote["pct_change"],
-        "amount": round(quote["amount"], 2),
-        "reason": reason,
-        "ema20": round(ema20, 4),
-        "ema60": round(ema60, 4),
     }
 
 
@@ -956,15 +828,6 @@ def _decision_boundary(disclaimer: str) -> dict[str, Any]:
         "final_decision_owner": "user",
         "disclaimer": disclaimer,
     }
-
-
-def _ownership_flow_note(quote: dict[str, Any]) -> str:
-    inflow = float(quote.get("main_net_inflow") or 0.0)
-    if inflow < 0:
-        return "main net inflow is negative; watch for institution exit against retail crowding"
-    if inflow > 0:
-        return "main net inflow is positive in the public quote snapshot"
-    return "ownership flow data is incomplete; user should verify institution/retail positioning"
 
 
 def _previous_weekday(value: date) -> date:

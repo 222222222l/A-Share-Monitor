@@ -25,8 +25,12 @@ tool returns, report a compact structured payload to root with:
 - usable quote count, kline attempt count, kline success count
 - `data_acquisition.quality_state`
 - recommendations/watchlist counts
+- `screening_diagnostics.watchlist` exactly as returned by the tool
+- `deterministic_user_report_zh` when present
 - failure reason when unavailable
 
 Do not read package files. Do not ask downstream nodes to continue when
 `status: DATA_UNAVAILABLE`, `status: DATA_DEGRADED`, or
 `data_acquisition.quality_state` is not `usable`.
+Never summarize the watchlist as examples. If a watchlist is present, forward
+the complete returned list and its failed condition fields.
