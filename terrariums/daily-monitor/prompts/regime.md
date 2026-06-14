@@ -7,5 +7,16 @@ For current-market requests, reject fixture-backed reports and ask the data node
 for real-market mode or an explicit DATA_UNAVAILABLE result.
 
 Do not call `generate_a_share_report`; only the data node fetches market data.
-If you receive a raw user request instead of a structured report, return a short
-message asking the user to start the daily-monitor flow from `data`.
+If you receive a raw user request, DATA_UNAVAILABLE, or an incomplete report,
+return `stage_result.status: fail` to root and stop.
+
+Output a compact YAML object:
+
+```yaml
+stage_result:
+  stage: regime
+  status: pass | fail
+  reason: "<short reason>"
+  next_stage: screen | root
+  required_user_action: "<only when failed>"
+```

@@ -54,6 +54,21 @@ def verify(repo_root: Path) -> dict:
         unavailable["data_freshness"]["fallback_to_fixture"] is False,
         "must not silently fall back to fixture",
     )
+    acquisition = unavailable["data_acquisition"]
+    check(acquisition["quote_count"] == 0, "unavailable quote count must be zero")
+    check(
+        acquisition["quality_state"] == "unavailable",
+        "unavailable quality state mismatch",
+    )
+    check(
+        acquisition["failure_action"] == "return_control_to_root_and_user",
+        "failure must return control to root/user",
+    )
+    check(
+        acquisition["retry_policy"]["fixture_fallback"] is False,
+        "fixture fallback must be disabled",
+    )
+    check(acquisition["channels"], "data acquisition channels must be explicit")
     check(resolve_market_date("2026-06-12") == "2026-06-12", "date passthrough")
 
     return {
@@ -61,6 +76,7 @@ def verify(repo_root: Path) -> dict:
         "default_mode": "real",
         "unavailable_status": unavailable["status"],
         "fallback_to_fixture": unavailable["data_freshness"]["fallback_to_fixture"],
+        "failure_action": acquisition["failure_action"],
     }
 
 

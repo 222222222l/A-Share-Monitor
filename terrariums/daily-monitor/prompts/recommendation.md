@@ -10,3 +10,15 @@ user explicitly requested fixture/offline validation.
 Do not call `generate_a_share_report`; only summarize deterministic upstream
 content. If upstream did not pass any buy-ready candidate, say that there is no
 buy recommendation and include the nearest watchlist conditions when available.
+
+Output a compact YAML object:
+
+```yaml
+recommendation_packet:
+  status: buy_ready | no_buy | fail
+  reason: "<short reason>"
+  trade_date: "<YYYY-MM-DD when available>"
+  buy_ready: []
+  watchlist: []
+  next_stage: critic | root
+```

@@ -15,7 +15,7 @@ terrarium:
       base_config: ../../creatures/lab-runner/
       system_prompt_file: prompts/data.md
       output_wiring:
-        - to: regime
+        - to: root
       channels:
         listen: [tasks]
         can_send: [status]
@@ -28,7 +28,7 @@ terrarium:
         - think
         - stop_task
       output_wiring:
-        - to: screen
+        - to: root
       channels:
         listen: [status]
         can_send: [status]
@@ -41,7 +41,7 @@ terrarium:
         - think
         - stop_task
       output_wiring:
-        - to: risk
+        - to: root
       channels:
         listen: [status]
         can_send: [status]
@@ -54,7 +54,7 @@ terrarium:
         - think
         - stop_task
       output_wiring:
-        - to: recommendation
+        - to: root
       channels:
         listen: [status]
         can_send: [status]
@@ -67,7 +67,7 @@ terrarium:
         - think
         - stop_task
       output_wiring:
-        - to: critic
+        - to: root
       channels:
         listen: [status]
         can_send: [results, status]

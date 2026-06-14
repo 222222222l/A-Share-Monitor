@@ -8,6 +8,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from collections import Counter
 from datetime import date
 from datetime import datetime
 from datetime import time as day_time
@@ -68,6 +69,7 @@ def build_unavailable_real_snapshot(
             "current_date": _now().date().isoformat(),
             "fallback_to_fixture": False,
         },
+        "data_acquisition": _data_acquisition_summary([], error=error),
         "decision_boundary": _decision_boundary(
             "real data unavailable; do not infer recommendations from stale fixture data"
         ),
@@ -189,6 +191,8 @@ def _build_snapshot_report(
     quotes: list[dict[str, Any]], trade_date: str, requested_trade_date: str | None
 ) -> dict[str, Any]:
     history_rows = []
+    kline_attempt_count = 0
+    kline_success_count = 0
     liquid = [
         row
         for row in quotes
@@ -198,9 +202,11 @@ def _build_snapshot_report(
     ]
     for quote in sorted(liquid, key=lambda item: item["amount"], reverse=True)[:80]:
         time.sleep(0.1)
+        kline_attempt_count += 1
         history = _fetch_kline(quote["symbol"], trade_date)
         if len(history) < 60:
             continue
+        kline_success_count += 1
         signal = _technical_signal(quote, history)
         if signal["status"] != "rejected":
             history_rows.append(signal)
@@ -222,6 +228,11 @@ def _build_snapshot_report(
             "current_date": _now().date().isoformat(),
             "fallback_to_fixture": False,
         },
+        "data_acquisition": _data_acquisition_summary(
+            quotes,
+            kline_attempt_count=kline_attempt_count,
+            kline_success_count=kline_success_count,
+        ),
         "decision_boundary": _decision_boundary(
             "public quote/kline snapshot; verify broker data before trading"
         ),
@@ -235,8 +246,75 @@ def _build_snapshot_report(
         "recommendations": recommendations,
         "watchlist": watchlist,
     }
+    _apply_data_quality_gate(report)
     report["critic_review"] = _review_real_snapshot(report)
     return report
+
+
+def _apply_data_quality_gate(report: dict[str, Any]) -> None:
+    acquisition = report["data_acquisition"]
+    if acquisition["quality_state"] == "usable":
+        return
+    report["status"] = "DATA_DEGRADED"
+    report["recommendations"] = []
+    report["selection_summary"]["planned_symbols"] = []
+    report["selection_summary"]["recommendation_count"] = 0
+    report["decision_boundary"]["disclaimer"] = (
+        "market data coverage is insufficient for a buy recommendation; "
+        "return control to the user and retry later"
+    )
+
+
+def _data_acquisition_summary(
+    quotes: list[dict[str, Any]],
+    *,
+    kline_attempt_count: int = 0,
+    kline_success_count: int = 0,
+    error: str | None = None,
+) -> dict[str, Any]:
+    source_counts = Counter(str(row.get("source") or "unknown") for row in quotes)
+    primary_quote_count = source_counts.get("eastmoney_quote", 0)
+    minimum_full_market_quotes = 500
+    if not quotes:
+        quality_state = "unavailable"
+    elif primary_quote_count >= minimum_full_market_quotes:
+        quality_state = "usable"
+    else:
+        quality_state = "degraded"
+    channels = [
+        {
+            "name": "eastmoney_quote",
+            "purpose": "A-share quote universe, breadth, amount, and main flow snapshot",
+            "usable_records": source_counts.get("eastmoney_quote", 0),
+        },
+        {
+            "name": "eastmoney_kline",
+            "purpose": "daily kline history for technical confirmation",
+            "attempted_symbols": kline_attempt_count,
+            "successful_symbols": kline_success_count,
+        },
+        {
+            "name": "tencent_kline",
+            "purpose": "fallback daily kline history when Eastmoney kline fails",
+            "usable_records": source_counts.get("fallback_kline_pool", 0),
+        },
+    ]
+    return {
+        "channels": channels,
+        "quality_state": quality_state,
+        "minimum_full_market_quotes": minimum_full_market_quotes,
+        "quote_count": len(quotes),
+        "source_counts": dict(source_counts),
+        "kline_attempt_count": kline_attempt_count,
+        "kline_success_count": kline_success_count,
+        "retry_policy": {
+            "http_attempts_per_request": 3,
+            "fallback_trade_date_walk_days": 8,
+            "fixture_fallback": False,
+        },
+        "failure_action": "return_control_to_root_and_user",
+        "error": error or "",
+    }
 
 
 def _technical_signal(
@@ -310,6 +388,10 @@ def _watch_or_reject(
 
 def _review_real_snapshot(report: dict[str, Any]) -> dict[str, Any]:
     findings = []
+    if report.get("status") == "DATA_DEGRADED":
+        findings.append("market_data_coverage_degraded")
+    if report.get("data_acquisition", {}).get("quality_state") != "usable":
+        findings.append("data_acquisition_not_usable")
     if report.get("data_freshness", {}).get("mode") != "real":
         findings.append("not_real_market_mode")
     for item in report.get("recommendations", []):
@@ -325,7 +407,7 @@ def _review_real_snapshot(report: dict[str, Any]) -> dict[str, Any]:
         if float(item.get("risk_reward") or 0.0) <= 1.5:
             findings.append(f"{item.get('symbol', 'unknown')}:risk_reward_below_1_5")
     return {
-        "status": "pass" if not findings else "revise",
+        "status": "pass" if not findings else "fail",
         "findings": findings,
         "confidence": "medium",
     }

@@ -7,7 +7,6 @@ For current-market requests, reject fixture-backed reports unless the user
 explicitly requested offline validation.
 
 Emit the final review directly in this creature's normal response. Do not use
-`[/output_results]` or any `output_results` block; this terrarium does not define
-a named output target called `results`.
+`[/output_results]`, `output_results`, `[/output_root]`, or `output_root` blocks.
 When the review is complete, it will be routed back to `root` automatically by
 the terrarium output wiring.

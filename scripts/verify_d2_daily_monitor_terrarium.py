@@ -36,9 +36,11 @@ def verify(repo_root: Path) -> dict:
         item["name"]: [edge["to"] for edge in item.get("output_wiring", [])]
         for item in creatures
     }
-    for source, target in zip(EXPECTED_CHAIN, EXPECTED_CHAIN[1:]):
-        check(wiring.get(source) == [target], f"missing edge {source}->{target}")
-    check(wiring.get("critic") == ["root"], "critic must route final output to root")
+    for source in EXPECTED_CHAIN:
+        check(
+            wiring.get(source) == ["root"],
+            f"{source} must report only to root for gated control",
+        )
 
     for item in creatures:
         if item["name"] in {"data", "critic"}:
@@ -60,6 +62,9 @@ def verify(repo_root: Path) -> dict:
         prompt_path = TERRARIUM_PATH.parent / item["system_prompt_file"]
         check(prompt_path.exists(), f"missing prompt for {item['name']}")
     check(prompts.exists(), "prompts directory missing")
+    root_prompt = (prompts / "root.md").read_text(encoding="utf-8")
+    check("Gate control" in root_prompt, "root prompt missing gate control")
+    check("Never retry" in root_prompt, "root prompt missing retry stop rule")
 
     manifest = PACKAGE_ROOT / "kohaku.yaml"
     manifest_text = manifest.read_text(encoding="utf-8")

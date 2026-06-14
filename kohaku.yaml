@@ -1,5 +1,5 @@
 name: a-share-monitor
-version: "0.1.3"
+version: "0.1.4"
 description: "A-share daily monitoring and recommendation lab package"
 
 distribution:
