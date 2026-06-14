@@ -1,5 +1,5 @@
 name: lab-runner
-description: A-share monitor lab entry for offline strategy and data validation
+description: A-share monitor lab entry for real-market snapshots and fixture validation
 
 controller:
   temperature: 0.2
