@@ -84,7 +84,7 @@ def main() -> int:
 
     output = {
         "status": "PASS",
-        "source": "eastmoney_public_snapshot",
+        "source": "public_market_snapshot",
         "trade_date": args.trade_date,
         "model": args.model,
         "report": report,
@@ -210,7 +210,7 @@ def _build_snapshot_report(
         "decision_boundary": {
             "real_trading_enabled": False,
             "final_decision_owner": "user",
-            "data_source": "Eastmoney public quote/kline endpoints",
+            "data_source": "Eastmoney/Tencent public quote and kline endpoints",
         },
         "market": _market_summary(quotes),
         "candidates": candidates[:5],
