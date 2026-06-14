@@ -27,6 +27,10 @@ def verify(repo_root: Path) -> dict:
     creatures = terrarium["creatures"]
     names = [item["name"] for item in creatures]
     check(names == EXPECTED_CHAIN, "daily-monitor chain order mismatch")
+    root = terrarium.get("root") or {}
+    check(root.get("name") == "root", "daily-monitor root entry missing")
+    check(root.get("output_wiring", []) == [], "root must not auto-wire to data")
+    check("tools" in root.get("no_inherit", []), "root must drop lab tools")
 
     wiring = {
         item["name"]: [edge["to"] for edge in item.get("output_wiring", [])]
@@ -34,7 +38,7 @@ def verify(repo_root: Path) -> dict:
     }
     for source, target in zip(EXPECTED_CHAIN, EXPECTED_CHAIN[1:]):
         check(wiring.get(source) == [target], f"missing edge {source}->{target}")
-    check(wiring.get("critic") == [], "critic must emit final output directly")
+    check(wiring.get("critic") == ["root"], "critic must route final output to root")
 
     for item in creatures:
         if item["name"] in {"data", "critic"}:
@@ -72,6 +76,7 @@ def verify(repo_root: Path) -> dict:
         "status": "PASS",
         "terrarium": terrarium["name"],
         "chain": EXPECTED_CHAIN,
+        "root_entry": root["name"],
         "edges": wiring,
         "channels": sorted(terrarium["channels"].keys()),
     }

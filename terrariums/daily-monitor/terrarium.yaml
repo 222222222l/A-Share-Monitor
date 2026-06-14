@@ -1,6 +1,15 @@
 terrarium:
   name: daily-monitor
 
+  root:
+    name: root
+    base_config: ../../creatures/lab-runner/
+    no_inherit: [tools]
+    system_prompt_file: prompts/root.md
+    tools:
+      - think
+      - stop_task
+
   creatures:
     - name: data
       base_config: ../../creatures/lab-runner/
@@ -66,6 +75,8 @@ terrarium:
     - name: critic
       base_config: ../../creatures/strategy-critic/
       system_prompt_file: prompts/critic.md
+      output_wiring:
+        - to: root
       channels:
         listen: [results, status]
         can_send: [results]
