@@ -11,6 +11,14 @@ from typing import Any, Callable
 HTTP_ATTEMPTS = 2
 HTTP_TIMEOUT_SECONDS = 12
 TENCENT_BATCH_SIZE = 800
+TENCENT_INDEX_SYMBOLS = [
+    "sh000001",
+    "sz399001",
+    "sz399006",
+    "sh000688",
+    "sh000300",
+    "sz399905",
+]
 
 
 def fetch_tencent_universe_quotes(
@@ -40,6 +48,26 @@ def fetch_tencent_universe_quotes(
             )
     if not quotes:
         raise RuntimeError("tencent batch quote returned no usable A-share quotes")
+    return quotes
+
+
+def fetch_tencent_index_quotes(
+    *, progress: Callable[[str, dict[str, Any]], None] | None = None
+) -> list[dict[str, Any]]:
+    """Fetch major A-share index quotes through Tencent batch quote."""
+    text = _fetch_quote_batch(TENCENT_INDEX_SYMBOLS)
+    parsed = [
+        _parse_quote_line(line, source="tencent_index_quote")
+        for line in text.split(";")
+    ]
+    quotes = [row for row in parsed if row is not None and float(row["close"]) > 0]
+    _progress(
+        progress,
+        "index_source_done",
+        {"source": "tencent_index_quote", "usable_indices": len(quotes)},
+    )
+    if not quotes:
+        raise RuntimeError("tencent index quote returned no usable A-share indices")
     return quotes
 
 
@@ -79,7 +107,9 @@ def _fetch_quote_batch(symbols: list[str]) -> str:
     raise RuntimeError(f"tencent quote request failed after retries: {last_error}")
 
 
-def _parse_quote_line(line: str) -> dict[str, Any] | None:
+def _parse_quote_line(
+    line: str, *, source: str = "tencent_batch_quote"
+) -> dict[str, Any] | None:
     if '="' not in line:
         return None
     body = line.split('="', 1)[1].rstrip('"')
@@ -103,7 +133,7 @@ def _parse_quote_line(line: str) -> dict[str, Any] | None:
         "prev_close": _to_float(parts[4]),
         "float_market_cap": 0.0,
         "main_net_inflow": 0.0,
-        "source": "tencent_batch_quote",
+        "source": source,
     }
 
 

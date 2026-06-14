@@ -16,6 +16,8 @@ from datetime import timedelta
 from typing import Any, Callable
 from zoneinfo import ZoneInfo
 
+from a_share_monitor.reporting.market_environment import build_market_environment
+from a_share_monitor.reporting.market_environment import unavailable_market_environment
 from a_share_monitor.reporting.tencent_quote import TENCENT_BATCH_SIZE
 from a_share_monitor.reporting.tencent_quote import fetch_tencent_universe_quotes
 
@@ -67,6 +69,7 @@ def build_unavailable_real_snapshot(
 ) -> dict[str, Any]:
     """Return an explicit no-data report without falling back to fixtures."""
     resolved_date = resolve_market_date(requested_trade_date)
+    environment = unavailable_market_environment(resolved_date, error)
     return {
         "schema_version": "a-share-monitor.real-snapshot.v1",
         "status": "DATA_UNAVAILABLE",
@@ -80,11 +83,15 @@ def build_unavailable_real_snapshot(
             "current_date": _now().date().isoformat(),
             "fallback_to_fixture": False,
         },
-        "data_acquisition": _data_acquisition_summary([], error=error),
+        "data_acquisition": _data_acquisition_summary(
+            [], error=error, market_environment=environment
+        ),
         "decision_boundary": _decision_boundary(
             "real data unavailable; do not infer recommendations from stale fixture data"
         ),
         "error": error,
+        "market_state": environment["market_state"],
+        "sector_scope": environment["sector_scope"],
         "selection_summary": {
             "min_risk_reward": 1.5,
             "planned_symbols": [],
@@ -301,6 +308,7 @@ def _build_snapshot_report(
             requested_trade_date,
             acquisition=preliminary_acquisition,
         )
+    environment = build_market_environment(quotes, trade_date, progress=progress)
     liquid = [
         row
         for row in quotes
@@ -356,11 +364,14 @@ def _build_snapshot_report(
             quotes,
             kline_attempt_count=kline_attempt_count,
             kline_success_count=kline_success_count,
+            market_environment=environment,
         ),
         "decision_boundary": _decision_boundary(
             "public quote/kline snapshot; verify broker data before trading"
         ),
         "market": _market_summary(quotes),
+        "market_state": environment["market_state"],
+        "sector_scope": environment["sector_scope"],
         "selection_summary": {
             "min_risk_reward": 1.5,
             "planned_symbols": planned_symbols,
@@ -391,6 +402,9 @@ def _degraded_snapshot_report(
     *,
     acquisition: dict[str, Any],
 ) -> dict[str, Any]:
+    environment = unavailable_market_environment(
+        trade_date, "market data coverage is insufficient"
+    )
     report = {
         "schema_version": "a-share-monitor.real-snapshot.v1",
         "status": "DATA_DEGRADED",
@@ -409,6 +423,8 @@ def _degraded_snapshot_report(
             "return control to the user and retry later"
         ),
         "market": _market_summary(quotes),
+        "market_state": environment["market_state"],
+        "sector_scope": environment["sector_scope"],
         "selection_summary": {
             "min_risk_reward": 1.5,
             "planned_symbols": [],
@@ -441,6 +457,7 @@ def _data_acquisition_summary(
     *,
     kline_attempt_count: int = 0,
     kline_success_count: int = 0,
+    market_environment: dict[str, Any] | None = None,
     error: str | None = None,
 ) -> dict[str, Any]:
     source_counts = Counter(str(row.get("source") or "unknown") for row in quotes)
@@ -477,12 +494,36 @@ def _data_acquisition_summary(
             "usable_records": source_counts.get("fallback_kline_pool", 0),
         },
     ]
+    if market_environment is not None:
+        environment_source = market_environment.get("source_summary", {})
+        channels.extend(
+            [
+                {
+                    "name": "tencent_index_quote",
+                    "purpose": "major A-share indices for market environment and regime gate",
+                    "usable_records": int(environment_source.get("index_count") or 0),
+                    "error": str(environment_source.get("index_error") or ""),
+                },
+                {
+                    "name": "tencent_index_style_proxy",
+                    "purpose": "style/sector-scope proxy when public industry-board source is unstable",
+                    "status": str(
+                        environment_source.get("sector_source_status") or "unknown"
+                    ),
+                },
+            ]
+        )
     return {
         "channels": channels,
         "quality_state": quality_state,
         "minimum_full_market_quotes": minimum_full_market_quotes,
         "quote_count": len(quotes),
         "source_counts": dict(source_counts),
+        "market_environment": (
+            market_environment.get("source_summary", {})
+            if market_environment is not None
+            else {}
+        ),
         "kline_attempt_count": kline_attempt_count,
         "kline_success_count": kline_success_count,
         "retry_policy": {
@@ -574,6 +615,10 @@ def _review_real_snapshot(report: dict[str, Any]) -> dict[str, Any]:
         findings.append("data_acquisition_not_usable")
     if report.get("data_freshness", {}).get("mode") != "real":
         findings.append("not_real_market_mode")
+    if not report.get("market_state"):
+        findings.append("missing_market_state")
+    if not report.get("sector_scope"):
+        findings.append("missing_sector_scope")
     for item in report.get("recommendations", []):
         for field in (
             "technical_exit_price",

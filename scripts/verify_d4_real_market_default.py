@@ -36,10 +36,23 @@ def verify(repo_root: Path) -> dict:
         "fetch_tencent_universe_quotes" in real_snapshot_text,
         "Tencent batch quote must be the primary quote source",
     )
+    check(
+        "build_market_environment" in real_snapshot_text,
+        "real reports must build explicit market environment fields",
+    )
     tencent_adapter = (
         PACKAGE_ROOT / "a_share_monitor" / "reporting" / "tencent_quote.py"
     )
     check(tencent_adapter.exists(), "Tencent quote adapter missing")
+    environment_adapter = (
+        PACKAGE_ROOT / "a_share_monitor" / "reporting" / "market_environment.py"
+    )
+    check(environment_adapter.exists(), "market environment adapter missing")
+    environment_text = environment_adapter.read_text(encoding="utf-8")
+    check(
+        "fetch_tencent_index_quotes" in environment_text,
+        "market environment must use Tencent index quotes",
+    )
 
     lab_prompt = PACKAGE_ROOT / "creatures" / "lab-runner" / "prompts" / "system.md"
     lab_text = lab_prompt.read_text(encoding="utf-8")
@@ -66,6 +79,8 @@ def verify(repo_root: Path) -> dict:
         "must not silently fall back to fixture",
     )
     acquisition = unavailable["data_acquisition"]
+    check(unavailable["market_state"], "unavailable report must include market_state")
+    check(unavailable["sector_scope"], "unavailable report must include sector_scope")
     check(acquisition["quote_count"] == 0, "unavailable quote count must be zero")
     check(
         acquisition["quality_state"] == "unavailable",
