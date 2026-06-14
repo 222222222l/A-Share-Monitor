@@ -68,6 +68,14 @@ def verify(repo_root: Path) -> dict:
         acquisition["retry_policy"]["fixture_fallback"] is False,
         "fixture fallback must be disabled",
     )
+    check(
+        acquisition["retry_policy"]["http_attempts_per_request"] == 2,
+        "HTTP retry policy should fail fast",
+    )
+    check(
+        acquisition["retry_policy"]["fallback_probe_limit"] == 3,
+        "fallback probe limit should stay bounded",
+    )
     check(acquisition["channels"], "data acquisition channels must be explicit")
     check(resolve_market_date("2026-06-12") == "2026-06-12", "date passthrough")
 

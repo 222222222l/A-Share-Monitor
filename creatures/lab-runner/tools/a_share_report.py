@@ -17,6 +17,8 @@ from a_share_monitor.reporting import build_unavailable_real_snapshot
 class AShareReportTool(BaseTool):
     """Generate a real-market or fixture-backed A-share analysis report."""
 
+    needs_context = True
+
     @property
     def tool_name(self) -> str:
         return "generate_a_share_report"
@@ -58,6 +60,24 @@ class AShareReportTool(BaseTool):
         }
 
     async def _execute(self, args: dict[str, Any], **kwargs: Any) -> ToolResult:
+        context = kwargs.get("context")
+        progress_log: list[dict[str, Any]] = []
+
+        def progress(stage: str, payload: dict[str, Any]) -> None:
+            entry = {"stage": stage, **payload}
+            progress_log.append(entry)
+            router = getattr(getattr(context, "agent", None), "output_router", None)
+            if router is not None:
+                router.notify_activity(
+                    "tool_progress",
+                    f"[generate_a_share_report] {stage}",
+                    metadata={
+                        "tool_name": "generate_a_share_report",
+                        "stage": stage,
+                        "payload": payload,
+                    },
+                )
+
         pretty = bool(args.get("pretty", False))
         mode = str(args.get("mode") or "real")
         requested_trade_date = args.get("requested_trade_date")
@@ -69,6 +89,7 @@ class AShareReportTool(BaseTool):
                 report = build_real_snapshot_report(
                     requested_trade_date=requested_trade_date,
                     user_intent=user_intent,
+                    progress=progress,
                 )
             except Exception as exc:
                 report = build_unavailable_real_snapshot(
@@ -76,6 +97,8 @@ class AShareReportTool(BaseTool):
                     requested_trade_date=requested_trade_date,
                     user_intent=user_intent,
                 )
+        if progress_log and isinstance(report.get("data_acquisition"), dict):
+            report["data_acquisition"]["progress_log"] = progress_log
         output = json.dumps(
             report,
             ensure_ascii=False,

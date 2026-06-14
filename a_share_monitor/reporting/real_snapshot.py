@@ -13,11 +13,15 @@ from datetime import date
 from datetime import datetime
 from datetime import time as day_time
 from datetime import timedelta
-from typing import Any
+from typing import Any, Callable
 from zoneinfo import ZoneInfo
 
 EASTMONEY_UT = "bd1d9ddb04089700cf9c27f6f7426281"
 CHINA_TZ = ZoneInfo("Asia/Shanghai")
+HTTP_ATTEMPTS = 2
+HTTP_TIMEOUT_SECONDS = 12
+FALLBACK_PROBE_LIMIT = 3
+MAX_KLINE_SCREEN_SYMBOLS = 12
 FALLBACK_POOL = {
     "300750": "CATL",
     "002594": "BYD",
@@ -39,11 +43,15 @@ def build_real_snapshot_report(
     *,
     requested_trade_date: str | None = None,
     user_intent: str = "latest_completed_session",
+    progress: Callable[[str, dict[str, Any]], None] | None = None,
 ) -> dict[str, Any]:
     """Build a compact real-market snapshot report for the Web UI agent."""
     resolved_date = resolve_market_date(requested_trade_date)
-    quotes = _fetch_a_share_quotes(resolved_date)
-    report = _build_snapshot_report(quotes, resolved_date, requested_trade_date)
+    _progress(progress, "resolve_trade_date", {"trade_date": resolved_date})
+    quotes = _fetch_a_share_quotes(resolved_date, progress=progress)
+    report = _build_snapshot_report(
+        quotes, resolved_date, requested_trade_date, progress=progress
+    )
     report["user_intent"] = user_intent
     return report
 
@@ -106,37 +114,81 @@ def resolve_market_date(requested_trade_date: str | None = None) -> str:
     return candidate.isoformat()
 
 
-def _fetch_a_share_quotes(trade_date: str) -> list[dict[str, Any]]:
+def _fetch_a_share_quotes(
+    trade_date: str, *, progress: Callable[[str, dict[str, Any]], None] | None = None
+) -> list[dict[str, Any]]:
     fields = "f12,f14,f2,f3,f5,f6,f15,f16,f17,f18,f20,f21,f62"
     fs = "m:1+t:2,m:1+t:23,m:0+t:6,m:0+t:80"
+    _progress(progress, "quote_source_start", {"source": "eastmoney_quote"})
     try:
         first = _fetch_quote_page(1, 100, fields, fs)
         total = int(first["data"]["total"])
         rows = list(first["data"]["diff"])
+        _progress(
+            progress,
+            "quote_page",
+            {"source": "eastmoney_quote", "page": 1, "rows": len(rows), "total": total},
+        )
         for page in range(2, min((total // 100) + 2, 70)):
             time.sleep(0.12)
             payload = _fetch_quote_page(page, 100, fields, fs)
             rows.extend(payload["data"].get("diff") or [])
+            if page == 2 or page % 10 == 0:
+                _progress(
+                    progress,
+                    "quote_page",
+                    {
+                        "source": "eastmoney_quote",
+                        "page": page,
+                        "rows": len(rows),
+                        "total": total,
+                    },
+                )
             if len(rows) >= total:
                 break
         quotes = [_normalize_quote(row) for row in rows if _is_usable_quote(row)]
         if quotes:
+            _progress(
+                progress,
+                "quote_source_done",
+                {"source": "eastmoney_quote", "usable_quotes": len(quotes)},
+            )
             return quotes
-    except (KeyError, RuntimeError, ValueError):
-        pass
-    return _fetch_fallback_quotes_with_date_walk(trade_date)
+    except (KeyError, RuntimeError, ValueError) as exc:
+        _progress(
+            progress,
+            "quote_source_failed",
+            {"source": "eastmoney_quote", "error": str(exc)},
+        )
+    return _fetch_fallback_quotes_with_date_walk(trade_date, progress=progress)
 
 
-def _fetch_fallback_quotes_with_date_walk(trade_date: str) -> list[dict[str, Any]]:
+def _fetch_fallback_quotes_with_date_walk(
+    trade_date: str, *, progress: Callable[[str, dict[str, Any]], None] | None = None
+) -> list[dict[str, Any]]:
     candidate = date.fromisoformat(trade_date)
     last_error = "no usable fallback quotes"
+    _progress(
+        progress,
+        "fallback_probe_start",
+        {"source": "fallback_kline_pool", "probe_limit": FALLBACK_PROBE_LIMIT},
+    )
     for _ in range(8):
         candidate = (
             candidate if candidate.weekday() < 5 else _previous_weekday(candidate)
         )
         try:
-            quotes = _fetch_fallback_quotes(candidate.isoformat())
+            quotes = _fetch_fallback_quotes(candidate.isoformat(), progress=progress)
             if quotes:
+                _progress(
+                    progress,
+                    "fallback_probe_done",
+                    {
+                        "source": "fallback_kline_pool",
+                        "trade_date": candidate.isoformat(),
+                        "usable_quotes": len(quotes),
+                    },
+                )
                 return quotes
         except RuntimeError as exc:
             last_error = str(exc)
@@ -144,10 +196,19 @@ def _fetch_fallback_quotes_with_date_walk(trade_date: str) -> list[dict[str, Any
     raise RuntimeError(last_error)
 
 
-def _fetch_fallback_quotes(trade_date: str) -> list[dict[str, Any]]:
+def _fetch_fallback_quotes(
+    trade_date: str, *, progress: Callable[[str, dict[str, Any]], None] | None = None
+) -> list[dict[str, Any]]:
     quotes = []
-    for symbol, name in FALLBACK_POOL.items():
+    for index, (symbol, name) in enumerate(FALLBACK_POOL.items(), start=1):
+        if index > FALLBACK_PROBE_LIMIT:
+            break
         time.sleep(0.1)
+        _progress(
+            progress,
+            "fallback_symbol",
+            {"symbol": symbol, "index": index, "limit": FALLBACK_PROBE_LIMIT},
+        )
         rows = _fetch_kline(symbol, trade_date)
         if not rows:
             continue
@@ -188,11 +249,34 @@ def _fetch_quote_page(
 
 
 def _build_snapshot_report(
-    quotes: list[dict[str, Any]], trade_date: str, requested_trade_date: str | None
+    quotes: list[dict[str, Any]],
+    trade_date: str,
+    requested_trade_date: str | None,
+    *,
+    progress: Callable[[str, dict[str, Any]], None] | None = None,
 ) -> dict[str, Any]:
     history_rows = []
     kline_attempt_count = 0
     kline_success_count = 0
+    preliminary_acquisition = _data_acquisition_summary(quotes)
+    if preliminary_acquisition["quality_state"] != "usable":
+        _progress(
+            progress,
+            "quality_gate_failed",
+            {
+                "quality_state": preliminary_acquisition["quality_state"],
+                "quote_count": preliminary_acquisition["quote_count"],
+                "minimum_full_market_quotes": preliminary_acquisition[
+                    "minimum_full_market_quotes"
+                ],
+            },
+        )
+        return _degraded_snapshot_report(
+            quotes,
+            trade_date,
+            requested_trade_date,
+            acquisition=preliminary_acquisition,
+        )
     liquid = [
         row
         for row in quotes
@@ -200,9 +284,25 @@ def _build_snapshot_report(
         and -8 <= row["pct_change"] <= 8
         and row["close"] > row["open"]
     ]
-    for quote in sorted(liquid, key=lambda item: item["amount"], reverse=True)[:80]:
+    _progress(
+        progress,
+        "kline_screen_start",
+        {"eligible_quotes": len(liquid), "max_attempts": MAX_KLINE_SCREEN_SYMBOLS},
+    )
+    for quote in sorted(liquid, key=lambda item: item["amount"], reverse=True)[
+        :MAX_KLINE_SCREEN_SYMBOLS
+    ]:
         time.sleep(0.1)
         kline_attempt_count += 1
+        _progress(
+            progress,
+            "kline_symbol",
+            {
+                "symbol": quote["symbol"],
+                "attempt": kline_attempt_count,
+                "max_attempts": MAX_KLINE_SCREEN_SYMBOLS,
+            },
+        )
         history = _fetch_kline(quote["symbol"], trade_date)
         if len(history) < 60:
             continue
@@ -247,6 +347,53 @@ def _build_snapshot_report(
         "watchlist": watchlist,
     }
     _apply_data_quality_gate(report)
+    report["critic_review"] = _review_real_snapshot(report)
+    _progress(
+        progress,
+        "report_done",
+        {
+            "status": report["status"],
+            "quality_state": report["data_acquisition"]["quality_state"],
+            "recommendation_count": report["selection_summary"]["recommendation_count"],
+        },
+    )
+    return report
+
+
+def _degraded_snapshot_report(
+    quotes: list[dict[str, Any]],
+    trade_date: str,
+    requested_trade_date: str | None,
+    *,
+    acquisition: dict[str, Any],
+) -> dict[str, Any]:
+    report = {
+        "schema_version": "a-share-monitor.real-snapshot.v1",
+        "status": "DATA_DEGRADED",
+        "generated_at": _now().isoformat(),
+        "trade_date": trade_date,
+        "data_freshness": {
+            "mode": "real",
+            "requested_trade_date": requested_trade_date,
+            "resolved_trade_date": trade_date,
+            "current_date": _now().date().isoformat(),
+            "fallback_to_fixture": False,
+        },
+        "data_acquisition": acquisition,
+        "decision_boundary": _decision_boundary(
+            "market data coverage is insufficient for a buy recommendation; "
+            "return control to the user and retry later"
+        ),
+        "market": _market_summary(quotes),
+        "selection_summary": {
+            "min_risk_reward": 1.5,
+            "planned_symbols": [],
+            "watchlist_symbols": [],
+            "recommendation_count": 0,
+        },
+        "recommendations": [],
+        "watchlist": [],
+    }
     report["critic_review"] = _review_real_snapshot(report)
     return report
 
@@ -308,8 +455,10 @@ def _data_acquisition_summary(
         "kline_attempt_count": kline_attempt_count,
         "kline_success_count": kline_success_count,
         "retry_policy": {
-            "http_attempts_per_request": 3,
+            "http_attempts_per_request": HTTP_ATTEMPTS,
+            "http_timeout_seconds": HTTP_TIMEOUT_SECONDS,
             "fallback_trade_date_walk_days": 8,
+            "fallback_probe_limit": FALLBACK_PROBE_LIMIT,
             "fixture_fallback": False,
         },
         "failure_action": "return_control_to_root_and_user",
@@ -477,10 +626,12 @@ def _get_json(url: str) -> dict[str, Any]:
         "Referer": "https://quote.eastmoney.com/",
     }
     last_error: Exception | None = None
-    for attempt in range(1, 4):
+    for attempt in range(1, HTTP_ATTEMPTS + 1):
         request = urllib.request.Request(url, headers=headers)
         try:
-            with urllib.request.urlopen(request, timeout=45) as response:
+            with urllib.request.urlopen(
+                request, timeout=HTTP_TIMEOUT_SECONDS
+            ) as response:
                 return json.loads(response.read().decode("utf-8"))
         except (urllib.error.URLError, http.client.RemoteDisconnected) as exc:
             last_error = exc
@@ -599,3 +750,12 @@ def _previous_weekday(value: date) -> date:
 
 def _now() -> datetime:
     return datetime.now(CHINA_TZ)
+
+
+def _progress(
+    callback: Callable[[str, dict[str, Any]], None] | None,
+    stage: str,
+    payload: dict[str, Any],
+) -> None:
+    if callback is not None:
+        callback(stage, payload)
