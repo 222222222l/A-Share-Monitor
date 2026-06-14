@@ -7,9 +7,5 @@ controller:
 system_prompt_file: prompts/system.md
 
 tools:
-  - read
-  - glob
-  - grep
-  - json_read
   - think
   - stop_task

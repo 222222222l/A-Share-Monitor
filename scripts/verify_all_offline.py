@@ -9,7 +9,6 @@ import subprocess
 import sys
 from pathlib import Path
 
-
 SCRIPT_ROOT = Path(__file__).resolve().parent
 PACKAGE_ROOT = SCRIPT_ROOT.parent
 DEFAULT_REPO_ROOT = PACKAGE_ROOT.parent.parent
@@ -28,6 +27,7 @@ VALIDATION_MODULES = (
     "scripts.verify_d1_structured_report",
     "scripts.verify_d2_daily_monitor_terrarium",
     "scripts.verify_d3_strategy_critic",
+    "scripts.verify_d4_real_market_default",
     "scripts.verify_e2_event_backtest",
     "scripts.verify_e3_paper_trading_log",
 )

@@ -9,7 +9,6 @@ from pathlib import Path
 
 import yaml
 
-
 SCRIPT_ROOT = Path(__file__).resolve().parent
 PACKAGE_ROOT = SCRIPT_ROOT.parent
 DEFAULT_REPO_ROOT = PACKAGE_ROOT.parent.parent
@@ -39,8 +38,8 @@ def verify(repo_root: Path) -> dict:
     )
     if manifest.get("name") != "a-share-monitor":
         raise AssertionError("manifest name must be a-share-monitor")
-    if manifest.get("version") != "0.1.0":
-        raise AssertionError("manifest version must be 0.1.0")
+    if manifest.get("version") != "0.1.1":
+        raise AssertionError("manifest version must be 0.1.1")
 
     creatures = manifest.get("creatures") or []
     creature_names = {entry.get("name") for entry in creatures}
@@ -64,9 +63,14 @@ def verify(repo_root: Path) -> dict:
         raise AssertionError("lab-runner config name mismatch")
     tools = config.get("tools") or []
     tool_names = {item if isinstance(item, str) else item.get("name") for item in tools}
-    for tool_name in ("read", "glob", "grep", "json_read", "think", "stop_task"):
+    for tool_name in ("think", "stop_task", "generate_a_share_report"):
         if tool_name not in tool_names:
             raise AssertionError(f"lab-runner missing tool: {tool_name}")
+    for tool_name in ("read", "glob", "grep", "json_read"):
+        if tool_name in tool_names:
+            raise AssertionError(
+                f"lab-runner should not expose high-context tool: {tool_name}"
+            )
 
     blueprint = repo_root / "docs" / "zh-CN" / "dev" / "a-share-monitor-blueprint.md"
     if not blueprint.exists():
