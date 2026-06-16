@@ -625,11 +625,12 @@ def _data_acquisition_summary(
     if ownership_flow is not None:
         channels.append(
             {
-                "name": "eastmoney_order_size_fund_flow",
+                "name": "mixed_order_size_fund_flow",
                 "purpose": "institution/retail proxy via super-large/large vs medium/small orders",
                 "status": str(ownership_flow.get("status") or "unknown"),
                 "requested_symbols": int(ownership_flow.get("requested_symbols") or 0),
                 "usable_records": int(ownership_flow.get("usable_records") or 0),
+                "source_counts": ownership_flow.get("source_counts") or {},
                 "error": str(ownership_flow.get("error") or ""),
             }
         )
@@ -789,12 +790,23 @@ def _get_json(
     for attempt in range(1, attempts + 1):
         request = urllib.request.Request(url, headers=headers)
         try:
-            with urllib.request.urlopen(request, timeout=timeout) as response:
+            with _urlopen(request, timeout, strategy_config) as response:
                 return json.loads(response.read().decode("utf-8"))
         except (urllib.error.URLError, http.client.RemoteDisconnected) as exc:
             last_error = exc
             time.sleep(0.5 * attempt)
     raise RuntimeError(f"market data request failed after retries: {last_error}")
+
+
+def _urlopen(
+    request: urllib.request.Request,
+    timeout: int,
+    strategy_config: dict[str, Any],
+) -> Any:
+    if get_bool(strategy_config, "data_quality.disable_system_proxy", True):
+        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+        return opener.open(request, timeout=timeout)
+    return urllib.request.urlopen(request, timeout=timeout)
 
 
 def _parse_eastmoney_kline(row: str) -> dict[str, float | str]:

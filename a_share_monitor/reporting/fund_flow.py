@@ -7,6 +7,7 @@ import urllib.parse
 from typing import Any
 
 from a_share_monitor.config import DEFAULT_STRATEGY_CONFIG
+from a_share_monitor.config import get_bool
 from a_share_monitor.config import get_float
 from a_share_monitor.config import get_int
 
@@ -27,6 +28,7 @@ def fetch_symbol_fund_flows(
     batch_size = get_int(strategy_config, "ownership_flow.batch_size", 80)
     result: dict[str, dict[str, Any]] = {}
     last_error = ""
+    source_counts: dict[str, int] = {}
     for batch in _chunks(sorted(set(symbols)), batch_size):
         try:
             payload = get_json(_fund_flow_url(batch), strategy_config=strategy_config)
@@ -37,13 +39,27 @@ def fetch_symbol_fund_flows(
             parsed = normalize_fund_flow(row, strategy_config)
             if parsed:
                 result[parsed["symbol"]] = parsed
+                _count_source(source_counts, parsed)
     missing = [symbol for symbol in sorted(set(symbols)) if symbol not in result]
+    if missing and get_bool(strategy_config, "ownership_flow.akshare_enabled", True):
+        akshare_result, akshare_summary = _fetch_akshare_missing(
+            missing, strategy_config
+        )
+        if akshare_summary.get("error"):
+            last_error = str(akshare_summary["error"])
+        for symbol, parsed in akshare_result.items():
+            result[symbol] = parsed
+            _count_source(source_counts, parsed)
+        missing = [symbol for symbol in sorted(set(symbols)) if symbol not in result]
     for symbol in missing:
         parsed = _fetch_history_fund_flow(symbol, get_json, strategy_config)
         if parsed:
             result[symbol] = parsed
+            _count_source(source_counts, parsed)
     status = "usable" if result else "unavailable"
-    return result, _summary(status, len(symbols), len(result), last_error)
+    return result, _summary(
+        status, len(symbols), len(result), last_error, source_counts
+    )
 
 
 def normalize_fund_flow(
@@ -227,12 +243,35 @@ def _chunks(values: list[str], size: int) -> list[list[str]]:
     return [values[index : index + size] for index in range(0, len(values), size)]
 
 
-def _summary(status: str, requested: int, usable: int, error: str) -> dict[str, Any]:
+def _fetch_akshare_missing(
+    symbols: list[str],
+    strategy_config: dict[str, Any],
+) -> tuple[dict[str, dict[str, Any]], dict[str, Any]]:
+    from a_share_monitor.reporting.akshare_fund_flow import (
+        fetch_akshare_symbol_fund_flows,
+    )
+
+    return fetch_akshare_symbol_fund_flows(symbols, strategy_config)
+
+
+def _count_source(source_counts: dict[str, int], parsed: dict[str, Any]) -> None:
+    source = str(parsed.get("source") or "unknown")
+    source_counts[source] = source_counts.get(source, 0) + 1
+
+
+def _summary(
+    status: str,
+    requested: int,
+    usable: int,
+    error: str,
+    source_counts: dict[str, int] | None = None,
+) -> dict[str, Any]:
     return {
-        "source": "eastmoney_order_size_fund_flow",
+        "source": "mixed_order_size_fund_flow",
         "status": status,
         "requested_symbols": requested,
         "usable_records": usable,
+        "source_counts": source_counts or {},
         "error": error,
     }
 

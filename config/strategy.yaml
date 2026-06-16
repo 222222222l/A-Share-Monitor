@@ -2,6 +2,7 @@ version: 1
 profile: default
 
 data_quality:
+  disable_system_proxy: true
   minimum_full_market_quotes: 500
   http_attempts_per_request: 2
   http_timeout_seconds: 12
@@ -41,6 +42,7 @@ market_gate:
 
 ownership_flow:
   enabled: true
+  akshare_enabled: true
   batch_size: 80
   min_institutional_net_amount: 10000000
   min_retail_proxy_net_amount: 5000000

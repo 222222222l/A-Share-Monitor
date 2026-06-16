@@ -44,7 +44,12 @@ def attach_ownership_and_crowding(
         _progress(
             progress,
             "ownership_flow_start",
-            {"source": "eastmoney_order_size_fund_flow", "symbols": len(symbols)},
+            {
+                "source": "mixed_order_size_fund_flow",
+                "primary_source": "eastmoney_order_size_fund_flow",
+                "fallback_source": "akshare_stock_individual_fund_flow",
+                "symbols": len(symbols),
+            },
         )
         fund_flows, summary = fetch_symbol_fund_flows(
             symbols, get_json, strategy_config
@@ -63,6 +68,7 @@ def attach_ownership_and_crowding(
             "source": summary["source"],
             "status": summary["status"],
             "usable_records": summary["usable_records"],
+            "source_counts": summary.get("source_counts", {}),
         },
     )
     return summary
@@ -164,10 +170,11 @@ def _empty_sector_crowding(status: str) -> dict[str, Any]:
 
 def _empty_ownership_flow(symbol_count: int) -> dict[str, Any]:
     return {
-        "source": "eastmoney_order_size_fund_flow",
+        "source": "mixed_order_size_fund_flow",
         "status": "skipped",
         "requested_symbols": symbol_count,
         "usable_records": 0,
+        "source_counts": {},
         "error": "",
     }
 

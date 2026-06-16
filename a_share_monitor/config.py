@@ -17,6 +17,7 @@ DEFAULT_STRATEGY_CONFIG: dict[str, Any] = {
     "version": 1,
     "profile": "default",
     "data_quality": {
+        "disable_system_proxy": True,
         "minimum_full_market_quotes": 500,
         "http_attempts_per_request": 2,
         "http_timeout_seconds": 12,
@@ -56,6 +57,7 @@ DEFAULT_STRATEGY_CONFIG: dict[str, Any] = {
     },
     "ownership_flow": {
         "enabled": True,
+        "akshare_enabled": True,
         "batch_size": 80,
         "min_institutional_net_amount": 10_000_000,
         "min_retail_proxy_net_amount": 5_000_000,
@@ -203,6 +205,9 @@ def summarize_strategy_config(strategy_config: dict[str, Any]) -> dict[str, Any]
         },
         "ownership_flow": {
             "enabled": get_bool(strategy_config, "ownership_flow.enabled", True),
+            "akshare_enabled": get_bool(
+                strategy_config, "ownership_flow.akshare_enabled", True
+            ),
             "use_as_hard_filter": get_bool(
                 strategy_config, "ownership_flow.use_as_hard_filter", False
             ),

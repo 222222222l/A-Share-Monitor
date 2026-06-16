@@ -11,6 +11,9 @@ from a_share_monitor.config import load_strategy_config
 from a_share_monitor.reporting import build_agent_packet
 from a_share_monitor.reporting import build_unavailable_real_snapshot
 from a_share_monitor.reporting import resolve_market_date
+from a_share_monitor.reporting.akshare_fund_flow import (
+    normalize_akshare_individual_fund_flow,
+)
 from a_share_monitor.reporting.deterministic_output import attach_deterministic_outputs
 from a_share_monitor.reporting.fund_flow import normalize_fund_flow
 from a_share_monitor.reporting.real_screening import technical_signal
@@ -111,6 +114,14 @@ def verify(repo_root: Path) -> dict:
         strategy_config["risk_preference"]["min_risk_reward"] == 1.5,
         "default strategy config risk-reward mismatch",
     )
+    check(
+        strategy_config["data_quality"]["disable_system_proxy"] is True,
+        "market data requests must bypass system VPN/proxy by default",
+    )
+    check(
+        strategy_config["ownership_flow"]["akshare_enabled"] is True,
+        "AkShare fund-flow fallback must be enabled by default",
+    )
     check(unavailable["status"] == "DATA_UNAVAILABLE", "status mismatch")
     check(unavailable["strategy_config"]["profile"], "strategy profile missing")
     check(
@@ -186,6 +197,16 @@ def verify(repo_root: Path) -> dict:
     check(
         flow["counterparty_signal"] == "retail_crowding_institution_exit_risk",
         "fund-flow proxy must detect institution-exit retail-crowding risk",
+    )
+    akshare_flow = _sample_akshare_fund_flow(strategy_config)
+    check(
+        akshare_flow["source"] == "akshare_stock_individual_fund_flow",
+        "AkShare fund-flow adapter source mismatch",
+    )
+    check(
+        akshare_flow["counterparty_signal"]
+        == "retail_exit_institution_accumulation_opportunity",
+        "AkShare fund-flow adapter must map order-size fields",
     )
     crowding = _sample_sector_crowding(strategy_config)
     check(crowding["status"] == "usable", "sector crowding sample must be usable")
@@ -266,6 +287,28 @@ def _sample_fund_flow(strategy_config: dict) -> dict:
             "f100": "通信设备",
             "f103": "CPO概念,通信技术",
         },
+        strategy_config,
+    )
+
+
+def _sample_akshare_fund_flow(strategy_config: dict) -> dict:
+    return normalize_akshare_individual_fund_flow(
+        {
+            "日期": "2026-06-12",
+            "收盘价": 10.0,
+            "涨跌幅": 1.0,
+            "主力净流入-净额": 18_000_000,
+            "主力净流入-净占比": 3.0,
+            "超大单净流入-净额": 12_000_000,
+            "超大单净流入-净占比": 2.0,
+            "大单净流入-净额": 8_000_000,
+            "大单净流入-净占比": 1.0,
+            "中单净流入-净额": -3_000_000,
+            "中单净流入-净占比": -0.5,
+            "小单净流入-净额": -4_000_000,
+            "小单净流入-净占比": -0.6,
+        },
+        "600001",
         strategy_config,
     )
 

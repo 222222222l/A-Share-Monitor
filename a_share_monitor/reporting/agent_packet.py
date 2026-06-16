@@ -70,6 +70,7 @@ def _channel_packet(channel: dict[str, Any]) -> dict[str, Any]:
         "attempted_symbols",
         "successful_symbols",
         "requested_symbols",
+        "source_counts",
         "error",
     )
     return {key: channel.get(key) for key in keys if channel.get(key) not in (None, "")}
@@ -143,9 +144,11 @@ def _ownership_summary_packet(summary: dict[str, Any]) -> dict[str, Any]:
         "status": summary.get("status", "unknown"),
         "requested_symbols": summary.get("requested_symbols", 0),
         "usable_records": summary.get("usable_records", 0),
+        "source_counts": summary.get("source_counts", {}),
         "proxy_note": (
             "super-large and large orders are treated as institutional proxy; "
-            "medium and small orders are treated as retail proxy"
+            "medium and small orders are treated as retail proxy; AkShare is an "
+            "optional fallback when direct public endpoints miss symbols"
         ),
         "error": summary.get("error", ""),
     }
