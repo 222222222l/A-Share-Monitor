@@ -27,6 +27,11 @@ Packet contract:
 
 - Downstream nodes should receive the compact `a-share-monitor.agent-packet.v1`
   packet or a stage result that wraps that packet.
+- From `data`, require a raw JSON object whose `schema_version` is
+  `a-share-monitor.agent-packet.v1`. If data sends a human summary, a table, or
+  a "report generated" message instead, stop with `data_handoff_contract_failed`
+  and tell the user to rerun after updating/restarting the package. Do not ask
+  the user to manually provide missing fields.
 - Forward the packet once per stage. Do not repair or resend a larger report if
   a node rejects the packet; stop and tell the user which required field was
   missing.

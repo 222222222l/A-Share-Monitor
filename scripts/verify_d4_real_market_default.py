@@ -80,11 +80,26 @@ def verify(repo_root: Path) -> dict:
     check("Default to real-market data" in data_text, "data node must default real")
     check("using fixture data" in data_text, "data node must forbid fixture fallback")
     check(
+        "final response must be only the exact JSON object" in data_text,
+        "data node must forward raw compact JSON instead of summaries",
+    )
+    check(
+        "Do not call `send_channel`" in data_text,
+        "data node must rely on output wiring instead of short manual channel sends",
+    )
+    check(
         "screening.watchlist" in data_text,
         "data node must forward deterministic watchlist diagnostics",
     )
     check("ownership_flow" in data_text, "data node must forward ownership flow")
     check("sector_context" in data_text, "data node must forward sector context")
+
+    root_prompt = PACKAGE_ROOT / "terrariums" / "daily-monitor" / "prompts" / "root.md"
+    root_text = root_prompt.read_text(encoding="utf-8")
+    check(
+        "data_handoff_contract_failed" in root_text,
+        "root must report malformed data handoffs instead of asking the user for fields",
+    )
 
     unavailable = build_unavailable_real_snapshot(
         error="test market data failure",

@@ -16,10 +16,19 @@ with arguments on their own lines:
 @@user_intent=<short user request>
 [generate_a_share_report/]
 
-Do not place the `@@` arguments on the same line as the opening tag. After the
-tool returns, report the returned `a-share-monitor.agent-packet.v1` JSON object
-to root as the single source of truth. Do not expand it into a full report and do
-not read package files.
+Do not place the `@@` arguments on the same line as the opening tag.
+
+After the tool returns, your final response must be only the exact JSON object
+returned by the tool:
+
+- Start with `{` and end with `}`.
+- Do not add a title, bullets, table, Markdown fence, Chinese summary, or
+  acknowledgement.
+- Do not call `send_channel`; this terrarium already wires your normal response
+  to root.
+- Do not replace the JSON with "report generated" or a human-readable status
+  report.
+- Do not expand it into a full report and do not read package files.
 
 The packet must contain:
 
