@@ -11,6 +11,7 @@ CONDITION_LABELS = {
     "close_above_mid_ema": "收盘价收复中期均线",
     "risk_reward_above_minimum": "盈亏比高于最低要求",
     "near_trend_ema": "入场价格靠近趋势均线",
+    "sector_crowding_below_extreme": "板块拥挤度低于极端拥挤阈值",
 }
 
 
@@ -63,6 +64,7 @@ def build_user_report_zh(report: dict[str, Any], diagnostics: dict[str, Any]) ->
             f"成交额：{market.get('total_amount', 0)}",
             f"- 市场状态：{market_state.get('market_regime', 'unknown')}，"
             f"买入权限：{market_state.get('buy_permission', 'unknown')}",
+            _sector_crowding_summary(report),
             "",
             "股票推荐结论",
         ]
@@ -71,11 +73,20 @@ def build_user_report_zh(report: dict[str, Any], diagnostics: dict[str, Any]) ->
     if recommendations:
         lines.append("当前存在符合全部买入条件的候选：")
         for index, item in enumerate(recommendations, start=1):
+            ownership = item.get("ownership_flow") or {}
+            crowding = item.get("sector_crowding") or {}
             lines.append(
                 f"{index}. {item.get('name')}（{item.get('symbol')}）："
+                f"板块 {item.get('industry_name') or crowding.get('industry_name', 'unknown')}，"
                 f"盈亏比 {item.get('risk_reward')}，"
                 f"技术止损 {item.get('technical_exit_price')}，"
-                f"目标价 {item.get('target_1')}。"
+                f"目标价 {item.get('target_1')}，"
+                f"资金流 {ownership.get('counterparty_signal', 'unknown')}"
+                f"（机构代理净额 {ownership.get('institutional_proxy_net', 'unknown')}，"
+                f"散户代理净额 {ownership.get('retail_proxy_net', 'unknown')}），"
+                f"板块相对回暖 {crowding.get('relative_warming_score', 'unknown')}，"
+                f"拥挤度 {crowding.get('crowding_state', 'unknown')}"
+                f"（{crowding.get('crowding_score', 'unknown')}）。"
             )
     else:
         lines.append("当前无符合“下一交易日买入”触发标准的个股。")
@@ -101,8 +112,27 @@ def _watchlist_section(diagnostics: dict[str, Any]) -> str:
         return "\n".join(lines)
     for index, item in enumerate(watchlist, start=1):
         failed = "；".join(item["failed_condition_text"]) or item["reason"]
-        lines.append(f"{index}. {item['name']}（{item['symbol']}）：{failed}。")
+        ownership = item.get("ownership_flow") or {}
+        crowding = item.get("sector_crowding") or {}
+        sector = item.get("industry_name") or crowding.get("industry_name") or "unknown"
+        lines.append(
+            f"{index}. {item['name']}（{item['symbol']}）：{failed}。"
+            f"板块 {sector}，资金流 {ownership.get('counterparty_signal', 'unknown')}，"
+            f"板块拥挤 {crowding.get('crowding_state', 'unknown')}。"
+        )
     return "\n".join(lines)
+
+
+def _sector_crowding_summary(report: dict[str, Any]) -> str:
+    crowding = report.get("sector_crowding") or {}
+    if not crowding:
+        return "- 板块拥挤度：未获取"
+    extreme = crowding.get("extreme_crowding") or []
+    return (
+        f"- 板块拥挤度：{crowding.get('status', 'unknown')}，"
+        f"覆盖 {crowding.get('board_count', 0)} 个行业板块，"
+        f"极度拥挤 {len(extreme)} 个；景气度采用相对回暖分位标准。"
+    )
 
 
 def _watchlist_item(item: dict[str, Any]) -> dict[str, Any]:
@@ -116,6 +146,10 @@ def _watchlist_item(item: dict[str, Any]) -> dict[str, Any]:
         "reason": item.get("reason", ""),
         "ema20": item.get("ema20"),
         "ema60": item.get("ema60"),
+        "industry_name": item.get("industry_name", ""),
+        "concept_tags": item.get("concept_tags", []),
+        "ownership_flow": item.get("ownership_flow", {}),
+        "sector_crowding": item.get("sector_crowding", {}),
         "failed_conditions": conditions,
         "failed_condition_text": [row["text_zh"] for row in conditions],
     }

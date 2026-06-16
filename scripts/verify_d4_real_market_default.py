@@ -8,10 +8,14 @@ import json
 from pathlib import Path
 
 from a_share_monitor.config import load_strategy_config
-from a_share_monitor.reporting.deterministic_output import attach_deterministic_outputs
+from a_share_monitor.reporting import build_agent_packet
 from a_share_monitor.reporting import build_unavailable_real_snapshot
-from a_share_monitor.reporting.real_screening import technical_signal
 from a_share_monitor.reporting import resolve_market_date
+from a_share_monitor.reporting.deterministic_output import attach_deterministic_outputs
+from a_share_monitor.reporting.fund_flow import normalize_fund_flow
+from a_share_monitor.reporting.real_screening import technical_signal
+from a_share_monitor.reporting.report_enrichment import demote_extreme_crowding
+from a_share_monitor.reporting.sector_crowding import fetch_industry_board_crowding
 
 SCRIPT_ROOT = Path(__file__).resolve().parent
 PACKAGE_ROOT = SCRIPT_ROOT.parent
@@ -29,6 +33,11 @@ def verify(repo_root: Path) -> dict:
     )
     tool_text = tool_path.read_text(encoding="utf-8")
     check('"default": "real"' in tool_text, "tool must default to real mode")
+    check(
+        '"default": "agent_packet"' in tool_text,
+        "tool must default to compact agent packet output",
+    )
+    check("build_agent_packet" in tool_text, "compact agent packet builder missing")
     check("build_real_snapshot_report" in tool_text, "real snapshot builder missing")
     check("build_unavailable_real_snapshot" in tool_text, "unavailable report missing")
     check("build_latest_fixture_report()" in tool_text, "fixture mode path missing")
@@ -71,9 +80,11 @@ def verify(repo_root: Path) -> dict:
     check("Default to real-market data" in data_text, "data node must default real")
     check("using fixture data" in data_text, "data node must forbid fixture fallback")
     check(
-        "screening_diagnostics.watchlist" in data_text,
+        "screening.watchlist" in data_text,
         "data node must forward deterministic watchlist diagnostics",
     )
+    check("ownership_flow" in data_text, "data node must forward ownership flow")
+    check("sector_context" in data_text, "data node must forward sector context")
 
     unavailable = build_unavailable_real_snapshot(
         error="test market data failure",
@@ -90,6 +101,15 @@ def verify(repo_root: Path) -> dict:
     check(
         "deterministic_user_report_zh" in unavailable,
         "unavailable report missing deterministic user report",
+    )
+    unavailable_packet = build_agent_packet(unavailable)
+    check(
+        unavailable_packet["schema_version"] == "a-share-monitor.agent-packet.v1",
+        "agent packet schema mismatch",
+    )
+    check(
+        unavailable_packet["data_quality"]["quality_state"] == "unavailable",
+        "agent packet must expose unavailable data quality",
     )
     check(
         unavailable["data_freshness"]["mode"] == "real",
@@ -138,9 +158,43 @@ def verify(repo_root: Path) -> dict:
         "watchlist": [watch_item],
     }
     attach_deterministic_outputs(sample_report)
+    sample_packet = build_agent_packet(sample_report)
     check(
         sample_report["screening_diagnostics"]["watchlist"][0]["failed_condition_text"],
         "deterministic diagnostics must render failed condition text",
+    )
+    check(
+        sample_packet["screening"]["watchlist"][0]["failed_condition_text"],
+        "agent packet must keep complete watchlist condition text",
+    )
+    flow = _sample_fund_flow(strategy_config)
+    check(
+        flow["counterparty_signal"] == "retail_crowding_institution_exit_risk",
+        "fund-flow proxy must detect institution-exit retail-crowding risk",
+    )
+    crowding = _sample_sector_crowding(strategy_config)
+    check(crowding["status"] == "usable", "sector crowding sample must be usable")
+    check(
+        crowding["extreme_crowding"],
+        "sector crowding must identify extreme crowded boards",
+    )
+    candidate = {"status": "candidate", "unmet_conditions": []}
+    demote_extreme_crowding(candidate, crowding["extreme_crowding"][0], strategy_config)
+    check(
+        candidate["status"] == "watchlist",
+        "extreme crowding must demote candidates to watchlist",
+    )
+    enriched_report = _sample_enriched_report(strategy_config)
+    enriched_packet = build_agent_packet(enriched_report)
+    first_candidate = enriched_packet["screening"]["buy_ready"][0]
+    check(first_candidate["industry_name"], "candidate packet missing industry")
+    check(
+        first_candidate["ownership_flow"]["counterparty_signal"],
+        "candidate packet missing ownership-flow signal",
+    )
+    check(
+        first_candidate["sector_crowding"]["crowding_state"],
+        "candidate packet missing sector crowding state",
     )
 
     return {
@@ -177,6 +231,154 @@ def _sample_watchlist_signal(strategy_config: dict) -> dict:
         "main_net_inflow": 0.0,
     }
     return technical_signal(quote, rows, strategy_config)
+
+
+def _sample_fund_flow(strategy_config: dict) -> dict:
+    return normalize_fund_flow(
+        {
+            "f12": "600001",
+            "f14": "Sample",
+            "f62": -20_000_000,
+            "f184": -2.0,
+            "f66": -15_000_000,
+            "f69": -1.5,
+            "f72": -5_000_000,
+            "f75": -0.5,
+            "f78": 12_000_000,
+            "f81": 1.2,
+            "f84": 3_000_000,
+            "f87": 0.3,
+            "f100": "通信设备",
+            "f103": "CPO概念,通信技术",
+        },
+        strategy_config,
+    )
+
+
+def _sample_sector_crowding(strategy_config: dict) -> dict:
+    rows = [
+        {
+            "f12": "BK1",
+            "f14": "通信设备",
+            "f2": 100,
+            "f3": 8.0,
+            "f5": 10_000,
+            "f6": 80_000_000_000,
+            "f8": 12.0,
+            "f62": 3_000_000_000,
+            "f128": "Leader",
+            "f136": 10.0,
+            "f140": "600001",
+        },
+        {
+            "f12": "BK2",
+            "f14": "低位回暖",
+            "f2": 100,
+            "f3": 1.5,
+            "f5": 5_000,
+            "f6": 20_000_000_000,
+            "f8": 3.0,
+            "f62": 200_000_000,
+            "f128": "Warm",
+            "f136": 3.0,
+            "f140": "600002",
+        },
+        {
+            "f12": "BK3",
+            "f14": "弱势行业",
+            "f2": 100,
+            "f3": -1.0,
+            "f5": 1_000,
+            "f6": 3_000_000_000,
+            "f8": 0.8,
+            "f62": -100_000_000,
+            "f128": "Weak",
+            "f136": -2.0,
+            "f140": "600003",
+        },
+    ]
+
+    def fake_get_json(url: str, **_: object) -> dict:  # noqa: ARG001
+        return {"data": {"total": len(rows), "diff": rows}}
+
+    return fetch_industry_board_crowding(fake_get_json, strategy_config)
+
+
+def _sample_enriched_report(strategy_config: dict) -> dict:  # noqa: ARG001
+    report = {
+        "status": "PASS",
+        "trade_date": "2026-06-12",
+        "generated_at": "2026-06-12T16:00:00+08:00",
+        "data_freshness": {"mode": "real", "fallback_to_fixture": False},
+        "data_acquisition": {
+            "quality_state": "usable",
+            "quote_count": 5280,
+            "minimum_full_market_quotes": 500,
+            "kline_attempt_count": 12,
+            "kline_success_count": 12,
+            "channels": [],
+        },
+        "market": {
+            "universe_size": 5280,
+            "advancing_ratio": 0.5,
+            "total_amount": 3_050_000_000_000,
+        },
+        "market_state": {
+            "market_regime": "rotation_opportunity",
+            "buy_permission": "rotation_only",
+        },
+        "sector_scope": {"scope": "rotation"},
+        "sector_crowding": {
+            "source": "eastmoney_industry_board",
+            "status": "usable",
+            "board_count": 496,
+            "relative_warming_standard": "cross-sectional percentile",
+            "top_relative_warming": [],
+            "extreme_crowding": [],
+        },
+        "ownership_flow": {
+            "source": "eastmoney_order_size_fund_flow",
+            "status": "usable",
+            "requested_symbols": 1,
+            "usable_records": 1,
+        },
+        "selection_summary": {"min_risk_reward": 1.5},
+        "recommendations": [
+            {
+                "symbol": "300476",
+                "name": "Sample Tech",
+                "industry_name": "通信设备",
+                "concept_tags": ["CPO概念"],
+                "close": 350.55,
+                "entry_zone": [350.55, 360.41],
+                "technical_exit_price": 336.12,
+                "technical_exit_reason": "break stop or EMA20",
+                "target_1": 402.6,
+                "risk_reward": 1.74,
+                "fundamental_exit_trigger": "earnings warning",
+                "ownership_flow_risk": "order-size proxy available",
+                "time_exit_rule": "exit if target not reached in 5 sessions",
+                "ownership_flow": {
+                    "source": "eastmoney_order_size_fund_flow",
+                    "trade_date": "2026-06-12",
+                    "counterparty_signal": "institutional_accumulation",
+                    "institutional_proxy_net": 20_000_000,
+                    "retail_proxy_net": -5_000_000,
+                    "risk_note": "institutional proxy inflow",
+                },
+                "sector_crowding": {
+                    "industry_name": "通信设备",
+                    "crowding_state": "normal",
+                    "crowding_score": 0.62,
+                    "relative_warming_score": 0.71,
+                    "leader_name": "Leader",
+                },
+            }
+        ],
+        "watchlist": [],
+    }
+    attach_deterministic_outputs(report)
+    return report
 
 
 def main() -> int:

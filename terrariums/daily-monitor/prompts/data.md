@@ -12,25 +12,31 @@ with arguments on their own lines:
 
 [/generate_a_share_report]
 @@mode=real
+@@output_profile=agent_packet
 @@user_intent=<short user request>
 [generate_a_share_report/]
 
 Do not place the `@@` arguments on the same line as the opening tag. After the
-tool returns, report a compact structured payload to root with:
+tool returns, report the returned `a-share-monitor.agent-packet.v1` JSON object
+to root as the single source of truth. Do not expand it into a full report and do
+not read package files.
 
-- `status`
-- `trade_date`
-- `data_freshness`
-- `data_acquisition.channels`
-- usable quote count, kline attempt count, kline success count
-- `data_acquisition.quality_state`
-- recommendations/watchlist counts
-- `screening_diagnostics.watchlist` exactly as returned by the tool
-- `deterministic_user_report_zh` when present
+The packet must contain:
+
+- `schema_version: a-share-monitor.agent-packet.v1`
+- `status`, `trade_date`, `data_freshness`, `generated_at`
+- `data_quality.channels`, quote count, kline attempts, kline successes
+- `market_context`
+- `sector_context`
+- `ownership_flow`
+- `screening.buy_ready` and `screening.watchlist`
+- `deterministic_user_report_zh`
 - failure reason when unavailable
 
-Do not read package files. Do not ask downstream nodes to continue when
-`status: DATA_UNAVAILABLE`, `status: DATA_DEGRADED`, or
-`data_acquisition.quality_state` is not `usable`.
+Do not ask downstream nodes to continue when `status: DATA_UNAVAILABLE`,
+`status: DATA_DEGRADED`, or `data_quality.quality_state` is not `usable`.
 Never summarize the watchlist as examples. If a watchlist is present, forward
 the complete returned list and its failed condition fields.
+When users ask specifically about institution/retail flow, answer from
+`ownership_flow` and mark it as an order-size proxy, not real account identity.
+When users ask about sector prosperity/crowding, answer from `sector_context`.

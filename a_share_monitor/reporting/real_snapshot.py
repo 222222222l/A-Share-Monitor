@@ -26,6 +26,9 @@ from a_share_monitor.reporting.deterministic_output import attach_deterministic_
 from a_share_monitor.reporting.market_environment import build_market_environment
 from a_share_monitor.reporting.market_environment import unavailable_market_environment
 from a_share_monitor.reporting.real_screening import technical_signal
+from a_share_monitor.reporting.report_enrichment import attach_ownership_and_crowding
+from a_share_monitor.reporting.report_enrichment import fetch_sector_crowding
+from a_share_monitor.reporting.report_enrichment import public_sector_crowding
 from a_share_monitor.reporting.tencent_quote import TENCENT_BATCH_SIZE
 from a_share_monitor.reporting.tencent_quote import fetch_tencent_universe_quotes
 
@@ -358,6 +361,7 @@ def _build_snapshot_report(
     environment = build_market_environment(
         quotes, trade_date, progress=progress, strategy_config=strategy_config
     )
+    sector_crowding = fetch_sector_crowding(strategy_config, progress, _get_json)
     min_entry_amount = get_float(
         strategy_config, "quote_screen.min_entry_amount", 80_000_000
     )
@@ -415,6 +419,9 @@ def _build_snapshot_report(
             history_rows.append(signal)
         if len(history_rows) >= max_signal_rows:
             break
+    ownership_flow_summary = attach_ownership_and_crowding(
+        history_rows, sector_crowding, strategy_config, progress, _get_json
+    )
     recommendations = [row for row in history_rows if row["status"] == "candidate"][
         :recommendation_limit
     ]
@@ -440,6 +447,8 @@ def _build_snapshot_report(
             kline_attempt_count=kline_attempt_count,
             kline_success_count=kline_success_count,
             market_environment=environment,
+            ownership_flow=ownership_flow_summary,
+            sector_crowding=sector_crowding,
             strategy_config=strategy_config,
         ),
         "strategy_config": summarize_strategy_config(strategy_config),
@@ -449,6 +458,8 @@ def _build_snapshot_report(
         "market": _market_summary(quotes),
         "market_state": environment["market_state"],
         "sector_scope": environment["sector_scope"],
+        "sector_crowding": public_sector_crowding(sector_crowding),
+        "ownership_flow": ownership_flow_summary,
         "selection_summary": {
             "min_risk_reward": min_risk_reward,
             "planned_symbols": planned_symbols,
@@ -540,6 +551,8 @@ def _data_acquisition_summary(
     kline_attempt_count: int = 0,
     kline_success_count: int = 0,
     market_environment: dict[str, Any] | None = None,
+    ownership_flow: dict[str, Any] | None = None,
+    sector_crowding: dict[str, Any] | None = None,
     error: str | None = None,
     strategy_config: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
@@ -598,6 +611,27 @@ def _data_acquisition_summary(
                     ),
                 },
             ]
+        )
+    if sector_crowding is not None:
+        channels.append(
+            {
+                "name": "eastmoney_industry_board",
+                "purpose": "industry-board relative warming and crowding risk",
+                "status": str(sector_crowding.get("status") or "unknown"),
+                "usable_records": int(sector_crowding.get("board_count") or 0),
+                "error": str(sector_crowding.get("error") or ""),
+            }
+        )
+    if ownership_flow is not None:
+        channels.append(
+            {
+                "name": "eastmoney_order_size_fund_flow",
+                "purpose": "institution/retail proxy via super-large/large vs medium/small orders",
+                "status": str(ownership_flow.get("status") or "unknown"),
+                "requested_symbols": int(ownership_flow.get("requested_symbols") or 0),
+                "usable_records": int(ownership_flow.get("usable_records") or 0),
+                "error": str(ownership_flow.get("error") or ""),
+            }
         )
     return {
         "channels": channels,
@@ -749,6 +783,7 @@ def _get_json(
         "User-Agent": "Mozilla/5.0 AShareMonitor/0.1",
         "Accept": "application/json,text/plain,*/*",
         "Referer": "https://quote.eastmoney.com/",
+        "Connection": "close",
     }
     last_error: Exception | None = None
     for attempt in range(1, attempts + 1):

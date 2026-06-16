@@ -41,18 +41,36 @@ DEFAULT_STRATEGY_CONFIG: dict[str, Any] = {
         "liquidity_crisis_declining_ratio": 0.72,
         "liquidity_crisis_limit_down_min": 20,
         "liquidity_crisis_limit_down_vs_up_multiplier": 2.0,
-        "broad_risk_on_advancing_ratio": 0.65,
-        "broad_risk_on_index_average_pct_change": 0.3,
-        "rotation_advancing_ratio": 0.5,
+        "broad_risk_on_advancing_ratio": 0.60,
+        "broad_risk_on_index_average_pct_change": 0.2,
+        "rotation_advancing_ratio": 0.45,
         "policy_support_index_average_pct_change": 0.0,
         "policy_support_max_advancing_ratio": 0.45,
-        "active_style_pct_change": 0.3,
+        "active_style_pct_change": 0.2,
         "weak_style_pct_change": -0.3,
         "high_liquidity_amount": 1_500_000_000_000,
         "normal_liquidity_amount": 800_000_000_000,
-        "breadth_broad_positive_ratio": 0.65,
-        "breadth_positive_rotation_ratio": 0.5,
+        "breadth_broad_positive_ratio": 0.60,
+        "breadth_positive_rotation_ratio": 0.45,
         "breadth_mixed_ratio": 0.35,
+    },
+    "ownership_flow": {
+        "enabled": True,
+        "batch_size": 80,
+        "min_institutional_net_amount": 10_000_000,
+        "min_retail_proxy_net_amount": 5_000_000,
+        "use_as_hard_filter": False,
+        "fallback_history_limit": 5,
+    },
+    "sector_crowding": {
+        "enabled": True,
+        "page_size": 100,
+        "max_pages": 6,
+        "top_n": 20,
+        "relative_warming_score": 0.55,
+        "high_score": 0.75,
+        "extreme_score": 0.85,
+        "avoid_extreme_crowding": True,
     },
     "technical": {
         "min_history_days": 60,
@@ -165,6 +183,53 @@ def summarize_strategy_config(strategy_config: dict[str, Any]) -> dict[str, Any]
             ),
             "watchlist_limit": get_int(
                 strategy_config, "quote_screen.watchlist_limit", 10
+            ),
+        },
+        "market_gate": {
+            "broad_risk_on_advancing_ratio": get_float(
+                strategy_config, "market_gate.broad_risk_on_advancing_ratio", 0.60
+            ),
+            "broad_risk_on_index_average_pct_change": get_float(
+                strategy_config,
+                "market_gate.broad_risk_on_index_average_pct_change",
+                0.2,
+            ),
+            "rotation_advancing_ratio": get_float(
+                strategy_config, "market_gate.rotation_advancing_ratio", 0.45
+            ),
+            "active_style_pct_change": get_float(
+                strategy_config, "market_gate.active_style_pct_change", 0.2
+            ),
+        },
+        "ownership_flow": {
+            "enabled": get_bool(strategy_config, "ownership_flow.enabled", True),
+            "use_as_hard_filter": get_bool(
+                strategy_config, "ownership_flow.use_as_hard_filter", False
+            ),
+            "min_institutional_net_amount": get_float(
+                strategy_config,
+                "ownership_flow.min_institutional_net_amount",
+                10_000_000,
+            ),
+            "min_retail_proxy_net_amount": get_float(
+                strategy_config,
+                "ownership_flow.min_retail_proxy_net_amount",
+                5_000_000,
+            ),
+        },
+        "sector_crowding": {
+            "enabled": get_bool(strategy_config, "sector_crowding.enabled", True),
+            "relative_warming_score": get_float(
+                strategy_config, "sector_crowding.relative_warming_score", 0.55
+            ),
+            "high_score": get_float(
+                strategy_config, "sector_crowding.high_score", 0.75
+            ),
+            "extreme_score": get_float(
+                strategy_config, "sector_crowding.extreme_score", 0.85
+            ),
+            "avoid_extreme_crowding": get_bool(
+                strategy_config, "sector_crowding.avoid_extreme_crowding", True
             ),
         },
     }

@@ -5,12 +5,13 @@ warnings, and time-exit rules before forwarding a recommendation packet.
 For current-market requests, do not approve any candidate unless the report uses
 real-market mode and includes a recent resolved trade date.
 
-Do not call `generate_a_share_report`; only review structured content forwarded
-by root after the screen gate. If no structured candidate packet is present,
-return `stage_result.status: fail` to root.
+Do not call `generate_a_share_report`; only review the compact
+`a-share-monitor.agent-packet.v1` packet forwarded by root after the screen
+gate. If no structured candidate packet is present, return
+`stage_result.status: fail` to root. Do not ask for the full report.
 
 When there are no buy-ready candidates, do not create risk plans for watchlist
-symbols. Preserve the complete `screening_diagnostics.watchlist` with failed
+symbols. Preserve the complete `screening.watchlist` with failed
 conditions so the final user output remains deterministic.
 
 Output a compact YAML object:

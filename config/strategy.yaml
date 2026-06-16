@@ -26,18 +26,36 @@ market_gate:
   liquidity_crisis_declining_ratio: 0.72
   liquidity_crisis_limit_down_min: 20
   liquidity_crisis_limit_down_vs_up_multiplier: 2.0
-  broad_risk_on_advancing_ratio: 0.65
-  broad_risk_on_index_average_pct_change: 0.3
-  rotation_advancing_ratio: 0.5
+  broad_risk_on_advancing_ratio: 0.60
+  broad_risk_on_index_average_pct_change: 0.2
+  rotation_advancing_ratio: 0.45
   policy_support_index_average_pct_change: 0.0
   policy_support_max_advancing_ratio: 0.45
-  active_style_pct_change: 0.3
+  active_style_pct_change: 0.2
   weak_style_pct_change: -0.3
   high_liquidity_amount: 1500000000000
   normal_liquidity_amount: 800000000000
-  breadth_broad_positive_ratio: 0.65
-  breadth_positive_rotation_ratio: 0.5
+  breadth_broad_positive_ratio: 0.60
+  breadth_positive_rotation_ratio: 0.45
   breadth_mixed_ratio: 0.35
+
+ownership_flow:
+  enabled: true
+  batch_size: 80
+  min_institutional_net_amount: 10000000
+  min_retail_proxy_net_amount: 5000000
+  use_as_hard_filter: false
+  fallback_history_limit: 5
+
+sector_crowding:
+  enabled: true
+  page_size: 100
+  max_pages: 6
+  top_n: 20
+  relative_warming_score: 0.55
+  high_score: 0.75
+  extreme_score: 0.85
+  avoid_extreme_crowding: true
 
 technical:
   min_history_days: 60
