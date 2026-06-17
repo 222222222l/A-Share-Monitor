@@ -28,6 +28,26 @@ DEFAULT_STRATEGY_CONFIG: dict[str, Any] = {
         "eastmoney_backup_page_delay_seconds": 0.12,
         "kline_request_delay_seconds": 0.1,
     },
+    "gm": {
+        "enabled": True,
+        "python_executable": "",
+        "python_executable_env": "A_SHARE_MONITOR_GM_PYTHON",
+        "token_env": "A_SHARE_MONITOR_GM_TOKEN",
+        "service_addr_env": "A_SHARE_MONITOR_GM_SERV_ADDR",
+        "quote_batch_size": 500,
+        "request_timeout_seconds": 45,
+        "prefer_for_quotes": True,
+        "prefer_for_kline": True,
+        "prefer_for_ownership_flow": True,
+    },
+    "tonghuashun": {
+        "enabled": True,
+        "prefer_for_ownership_flow": True,
+        "http_attempts_per_request": 2,
+        "request_timeout_seconds": 10,
+        "request_delay_seconds": 0.25,
+        "turnover_lookup_enabled": False,
+    },
     "quote_screen": {
         "min_entry_amount": 80_000_000,
         "max_abs_pct_change": 8.0,
@@ -207,6 +227,14 @@ def summarize_strategy_config(strategy_config: dict[str, Any]) -> dict[str, Any]
             "enabled": get_bool(strategy_config, "ownership_flow.enabled", True),
             "akshare_enabled": get_bool(
                 strategy_config, "ownership_flow.akshare_enabled", True
+            ),
+            "gm_enabled": get_bool(strategy_config, "gm.enabled", True)
+            and get_bool(strategy_config, "gm.prefer_for_ownership_flow", True),
+            "tonghuashun_enabled": get_bool(
+                strategy_config, "tonghuashun.enabled", True
+            )
+            and get_bool(
+                strategy_config, "tonghuashun.prefer_for_ownership_flow", True
             ),
             "use_as_hard_filter": get_bool(
                 strategy_config, "ownership_flow.use_as_hard_filter", False

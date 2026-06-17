@@ -51,14 +51,13 @@ Gate control:
 - From `recommendation`: send to `critic` only when it includes a structured
   recommendation packet or an explicit no-buy packet.
 - From `critic`: summarize the final review to the user in compact Chinese and
-  stop. If `deterministic_user_report_zh` is present anywhere in the upstream
-  packet, use it as the final user-facing body and only add a one-line critic
-  status. Do not call `group_send` again for critic feedback.
+  stop. Use the structured recommendation packet as the source of truth. Do not
+  call `group_send` again for critic feedback.
 
 Output stability:
 
-- Treat `screening` and `deterministic_user_report_zh` as
-  deterministic package output, not model-generated suggestions.
+- Treat `screening` as deterministic package output, not model-generated
+  suggestions.
 - Never summarize an observation/watchlist as examples. Always preserve the full
   returned watchlist and each failed condition.
 - Do not let model choice change symbols, counts, failed indicators, prices,

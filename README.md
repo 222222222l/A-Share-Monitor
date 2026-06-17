@@ -3,12 +3,15 @@
 `a-share-monitor` is a lab-stage package for A-share daily monitoring,
 screening, risk planning, and recommendation workflows.
 
-The first implementation phase is deliberately offline-first:
+The current package defaults to real-market monitoring while keeping deterministic
+offline fixtures for validation:
 
-- use local fixtures before live APIs
+- resolve the latest completed A-share session for current-market questions
+- fetch full-market quotes and candidate klines before screening
 - calculate technical indicators from normalized OHLCV data
+- enrich only candidate/watchlist symbols with fund-flow and sector-crowding data
 - keep real trading disabled
-- emit structured recommendations for user review
+- emit compact structured recommendations for user review
 - preserve future broker / paper-order extension points
 
 ## Scope
@@ -22,7 +25,7 @@ Initial tradable universe:
 
 ## Current Stage
 
-This package currently contains the offline A/B/C validation path:
+This package currently contains the daily-monitor package path:
 
 - package manifest
 - minimal `lab-runner` creature
@@ -33,11 +36,30 @@ This package currently contains the offline A/B/C validation path:
   indicator, and risk-reward planning modules
 - a minimal `lab-runner` creature, `strategy-critic` creature, and
   `daily-monitor` terrarium for structured report workflows
-- minimal offline validation, event backtest, and paper-trading log helpers
-- validation scripts for the package skeleton, schema, fixture, and C-group
-  technical screening system
+- compact offline validation, event backtest, and paper-trading log helpers
+- compact Web UI handoff packets that avoid sending full-market rows or verbose
+  duplicate reports through every agent node
 
 Blueprint: `docs/zh-CN/dev/a-share-monitor-blueprint.md`
+
+## Data Flow
+
+For current-market requests, the daily monitor uses a staged data path:
+
+1. Resolve the latest completed China A-share trading session.
+2. Fetch a full-market quote universe from GM when configured, then Tencent, then
+   Eastmoney fallback sources.
+3. Build market regime, breadth, liquidity, sector-scope, and industry-crowding
+   summaries from aggregate data only.
+4. Run technical screening on a limited liquid candidate set.
+5. Enrich only buy-ready and watchlist symbols with selected-symbol fund-flow
+   sources, preferring GM money-flow data, then 10jqka `realFunds`, then public
+   Eastmoney/AkShare fallbacks.
+
+Raw full-market rows and full kline histories are not passed to LLM nodes. The
+Web UI terrarium receives `a-share-monitor.agent-packet.v1`, a compact packet
+containing only data-quality counts, market context, sector context,
+recommendations, watchlist conditions, and risk fields.
 
 ## Strategy Configuration
 
@@ -46,6 +68,8 @@ User-adjustable screening and risk parameters live in
 while exposing the main decision knobs:
 
 - data quality gates and retry bounds
+- optional GM SDK quote/kline priority source
+- optional 10jqka selected-symbol fund-flow source
 - quote pre-screening thresholds
 - market-regime and liquidity gates
 - EMA/ATR technical confirmation windows
@@ -56,43 +80,56 @@ To keep local preferences outside the package checkout, point
 `A_SHARE_MONITOR_STRATEGY_CONFIG` to another YAML file with only the fields you
 want to override.
 
+## Optional GM SDK Source
+
+GM SDK is treated as a preferred but optional data source for trading dates,
+full-market quotes, and daily kline history. Keep secrets outside the package:
+
+```bash
+set A_SHARE_MONITOR_GM_TOKEN=<your-gm-token>
+set A_SHARE_MONITOR_GM_PYTHON=<python-with-gm-sdk>
+```
+
+If GM is not installed, the token is absent, the terminal service is offline, or
+the account lacks a specific data permission, the package falls back to the
+public Tencent/Eastmoney/AkShare sources and records the failed source in the
+data-acquisition summary.
+
+## Optional 10jqka Fund-Flow Source
+
+For candidate and watchlist symbols, the package can call 10jqka's
+selected-symbol `realFunds` endpoint as a lightweight fallback when GM money
+flow is unavailable. This source does not require full-market scraping and does
+not block the workflow if a symbol request fails. Large-order net flow is used
+as an institutional proxy; medium/small-order net flow is used as a retail
+proxy. Turnover is treated as an optional enrichment field and sector crowding
+is the preferred crowding-risk substitute.
+
+## Token Cost Control
+
+The Web UI package is designed to keep model prompts stable across providers:
+
+- `generate_a_share_report` defaults to `output_profile: agent_packet`.
+- The compact packet omits the deterministic Chinese final report unless
+  `include_user_report: true` is explicitly requested for debugging.
+- Stage nodes must not echo the full upstream packet in their own YAML outputs.
+- Data-acquisition progress is streamed to the UI as activity metadata and is
+  not embedded into the normal compact packet.
+- Use `output_profile: full_report` only for manual debugging because it can
+  include verbose source summaries.
+
 ## Verify
 
 ```bash
-python ./examples/a-share-monitor/scripts/verify_a1_package_skeleton.py --repo-root .
-python ./examples/a-share-monitor/scripts/verify_b1_market_data_schema.py --repo-root .
-python ./examples/a-share-monitor/scripts/verify_b2_offline_fixture.py --repo-root .
-```
-
-Run the B3 adapter verification from the package root so package modules are
-importable without relying on this repository:
-
-```bash
 cd examples/a-share-monitor
-python -m scripts.verify_b3_fixture_adapter --repo-root ../..
-python -m scripts.verify_c1_market_state --repo-root ../..
-python -m scripts.verify_c2_sector_strength --repo-root ../..
-python -m scripts.verify_c3_stock_screen --repo-root ../..
-python -m scripts.verify_c0_technical_indicators --repo-root ../..
-python -m scripts.verify_c4_risk_plan --repo-root ../..
-python -m scripts.verify_c_group_technical_screening --repo-root ../..
-python -m scripts.verify_d1_structured_report --repo-root ../..
-python -m scripts.verify_d2_daily_monitor_terrarium --repo-root ../..
-python -m scripts.verify_d3_strategy_critic --repo-root ../..
-python -m scripts.verify_e2_event_backtest --repo-root ../..
-python -m scripts.verify_e3_paper_trading_log --repo-root ../..
 python -m scripts.verify_all_offline --repo-root ../..
-python -m scripts.generate_d1_structured_report
 ```
 
-Optional LLM smoke test for structured user-facing report generation:
+Optional real-market smoke test:
 
 ```bash
 cd examples/a-share-monitor
-set A_SHARE_MONITOR_API_KEY=<temporary-key>
-python -m scripts.smoke_d_group_llm_report \
-  --base-url https://api.laozhang.ai/v1 \
-  --model gemini-3-flash-preview
+python -m scripts.run_real_snapshot_smoke --trade-date 2026-06-16
 ```
 
 ## Safety Boundary

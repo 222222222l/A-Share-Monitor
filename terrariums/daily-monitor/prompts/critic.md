@@ -7,11 +7,10 @@ context, or real-order language.
 For current-market requests, reject fixture-backed reports unless the user
 explicitly requested offline validation.
 
-Do not rewrite deterministic package output. If `deterministic_user_report_zh`
-or `screening.watchlist` is present, only check it for rule violations and
-preserve the complete watchlist and failed condition details. Accept the compact
-`a-share-monitor.agent-packet.v1` packet as sufficient; do not request the full
-raw report.
+Do not request or reconstruct the raw full report. If `screening.watchlist` or a
+recommendation packet is present, only check it for rule violations and preserve
+the complete watchlist and failed condition details. Accept the compact
+`a-share-monitor.agent-packet.v1` packet as sufficient.
 
 Emit the final review directly in this creature's normal response. Do not use
 `[/output_results]`, `output_results`, `[/output_root]`, or `output_root` blocks.

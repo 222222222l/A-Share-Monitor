@@ -29,11 +29,34 @@ def fetch_symbol_fund_flows(
     result: dict[str, dict[str, Any]] = {}
     last_error = ""
     source_counts: dict[str, int] = {}
-    for batch in _chunks(sorted(set(symbols)), batch_size):
+    source_errors: dict[str, str] = {}
+    missing = sorted(set(symbols))
+    if get_bool(strategy_config, "gm.prefer_for_ownership_flow", True):
+        gm_result, gm_summary = _fetch_gm_missing(missing, strategy_config)
+        if gm_summary.get("error"):
+            last_error = str(gm_summary["error"])
+            source_errors[str(gm_summary["source"])] = last_error
+        for symbol, parsed in gm_result.items():
+            result[symbol] = parsed
+            _count_source(source_counts, parsed)
+        missing = [symbol for symbol in missing if symbol not in result]
+    if missing and get_bool(
+        strategy_config, "tonghuashun.prefer_for_ownership_flow", True
+    ):
+        ths_result, ths_summary = _fetch_ths_missing(missing, strategy_config)
+        if ths_summary.get("error"):
+            last_error = str(ths_summary["error"])
+            source_errors[str(ths_summary["source"])] = last_error
+        for symbol, parsed in ths_result.items():
+            result[symbol] = parsed
+            _count_source(source_counts, parsed)
+        missing = [symbol for symbol in missing if symbol not in result]
+    for batch in _chunks(missing, batch_size):
         try:
             payload = get_json(_fund_flow_url(batch), strategy_config=strategy_config)
         except RuntimeError as exc:
             last_error = str(exc)
+            source_errors["eastmoney_order_size_fund_flow"] = last_error
             continue
         for row in payload.get("data", {}).get("diff") or []:
             parsed = normalize_fund_flow(row, strategy_config)
@@ -47,6 +70,7 @@ def fetch_symbol_fund_flows(
         )
         if akshare_summary.get("error"):
             last_error = str(akshare_summary["error"])
+            source_errors[str(akshare_summary["source"])] = last_error
         for symbol, parsed in akshare_result.items():
             result[symbol] = parsed
             _count_source(source_counts, parsed)
@@ -57,8 +81,9 @@ def fetch_symbol_fund_flows(
             result[symbol] = parsed
             _count_source(source_counts, parsed)
     status = "usable" if result else "unavailable"
+    summary_error = "" if result else last_error
     return result, _summary(
-        status, len(symbols), len(result), last_error, source_counts
+        status, len(symbols), len(result), summary_error, source_counts, source_errors
     )
 
 
@@ -254,6 +279,24 @@ def _fetch_akshare_missing(
     return fetch_akshare_symbol_fund_flows(symbols, strategy_config)
 
 
+def _fetch_gm_missing(
+    symbols: list[str],
+    strategy_config: dict[str, Any],
+) -> tuple[dict[str, dict[str, Any]], dict[str, Any]]:
+    from a_share_monitor.reporting.gm_source import fetch_gm_symbol_fund_flows
+
+    return fetch_gm_symbol_fund_flows(symbols, strategy_config)
+
+
+def _fetch_ths_missing(
+    symbols: list[str],
+    strategy_config: dict[str, Any],
+) -> tuple[dict[str, dict[str, Any]], dict[str, Any]]:
+    from a_share_monitor.reporting.ths_fund_flow import fetch_ths_symbol_fund_flows
+
+    return fetch_ths_symbol_fund_flows(symbols, strategy_config)
+
+
 def _count_source(source_counts: dict[str, int], parsed: dict[str, Any]) -> None:
     source = str(parsed.get("source") or "unknown")
     source_counts[source] = source_counts.get(source, 0) + 1
@@ -265,6 +308,7 @@ def _summary(
     usable: int,
     error: str,
     source_counts: dict[str, int] | None = None,
+    source_errors: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     return {
         "source": "mixed_order_size_fund_flow",
@@ -272,6 +316,7 @@ def _summary(
         "requested_symbols": requested,
         "usable_records": usable,
         "source_counts": source_counts or {},
+        "source_errors": source_errors or {},
         "error": error,
     }
 

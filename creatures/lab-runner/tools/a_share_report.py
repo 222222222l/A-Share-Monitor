@@ -62,6 +62,11 @@ class AShareReportTool(BaseTool):
                     "description": "agent_packet is the default compact handoff; full_report returns the raw package report.",
                     "default": "agent_packet",
                 },
+                "include_user_report": {
+                    "type": "boolean",
+                    "description": "Include the deterministic Chinese user report in agent_packet. Defaults to false to reduce multi-node token usage.",
+                    "default": False,
+                },
             },
             "required": [],
         }
@@ -88,6 +93,7 @@ class AShareReportTool(BaseTool):
         pretty = bool(args.get("pretty", False))
         mode = str(args.get("mode") or "real")
         output_profile = str(args.get("output_profile") or "agent_packet")
+        include_user_report = bool(args.get("include_user_report", False))
         requested_trade_date = args.get("requested_trade_date")
         user_intent = str(args.get("user_intent") or "latest_completed_session")
         if mode == "fixture":
@@ -105,10 +111,16 @@ class AShareReportTool(BaseTool):
                     requested_trade_date=requested_trade_date,
                     user_intent=user_intent,
                 )
-        if progress_log and isinstance(report.get("data_acquisition"), dict):
+        if (
+            output_profile == "full_report"
+            and progress_log
+            and isinstance(report.get("data_acquisition"), dict)
+        ):
             report["data_acquisition"]["progress_log"] = progress_log
         payload = (
-            report if output_profile == "full_report" else build_agent_packet(report)
+            report
+            if output_profile == "full_report"
+            else build_agent_packet(report, include_user_report=include_user_report)
         )
         output = json.dumps(
             payload,
@@ -145,8 +157,9 @@ class AShareReportTool(BaseTool):
             "The tool does not silently fall back from real data to fixture data. "
             "If real data is unavailable it returns DATA_UNAVAILABLE.\n\n"
             "By default the tool returns `output_profile: agent_packet`, a compact "
-            "handoff contract for terrarium nodes. Use `output_profile: full_report` "
-            "only for manual debugging.\n\n"
+            "handoff contract for terrarium nodes. The compact packet omits the "
+            "full deterministic Chinese report unless `include_user_report` is "
+            "true. Use `output_profile: full_report` only for manual debugging.\n\n"
             "The tool never places orders and never enables real trading. "
             "All output is research material for user review."
         )

@@ -21,17 +21,18 @@ Review rules:
   time scope unless the report explicitly says real data is unavailable.
 - Reject any buy recommendation with `risk_reward <= 1.5`.
 - Reject any buy recommendation that lacks `technical_exit_price`,
-  `technical_exit_reason`, `fundamental_exit_trigger`, `ownership_flow_risk`,
-  or `time_exit_rule`.
+  `technical_exit_reason`, `fundamental_exit_trigger`, `time_exit_rule`, or
+  `ownership_flow.counterparty_signal`.
 - Ask for revision when any buy recommendation lacks its industry name, sector
   crowding/warming context, or ownership-flow proxy context.
 - Reject watchlist symbols that receive buy plans.
 - Reject outputs that imply real broker orders, automatic execution, or a final
   decision made by the agent.
 - Surface fundamental risks as user-review warnings, not as hidden filters.
-- Preserve deterministic package fields such as `screening.watchlist` and
-  `deterministic_user_report_zh`; do not shorten complete watchlists into
-  examples or omit failed condition details.
+- Preserve deterministic package fields such as `screening.watchlist`; do not
+  shorten complete watchlists into examples or omit failed condition details.
+  Do not request the deterministic Chinese report when the compact packet
+  already has the structured fields.
 
 Preferred output contract:
 

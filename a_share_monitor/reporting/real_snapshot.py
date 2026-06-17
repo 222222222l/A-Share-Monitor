@@ -23,6 +23,9 @@ from a_share_monitor.config import get_int
 from a_share_monitor.config import load_strategy_config
 from a_share_monitor.config import summarize_strategy_config
 from a_share_monitor.reporting.deterministic_output import attach_deterministic_outputs
+from a_share_monitor.reporting.gm_source import fetch_gm_kline
+from a_share_monitor.reporting.gm_source import fetch_gm_universe_quotes
+from a_share_monitor.reporting.gm_source import gm_available
 from a_share_monitor.reporting.market_environment import build_market_environment
 from a_share_monitor.reporting.market_environment import unavailable_market_environment
 from a_share_monitor.reporting.real_screening import technical_signal
@@ -145,6 +148,19 @@ def _fetch_a_share_quotes(
     page_delay = get_float(
         strategy_config, "data_quality.eastmoney_backup_page_delay_seconds", 0.12
     )
+    if get_bool(strategy_config, "gm.prefer_for_quotes", True) and gm_available(
+        strategy_config
+    ):
+        try:
+            return fetch_gm_universe_quotes(
+                progress=progress, strategy_config=strategy_config
+            )
+        except RuntimeError as exc:
+            _progress(
+                progress,
+                "quote_source_failed",
+                {"source": "gm_current_quote", "error": str(exc)},
+            )
     _progress(
         progress,
         "quote_source_start",
@@ -558,9 +574,11 @@ def _data_acquisition_summary(
 ) -> dict[str, Any]:
     strategy_config = strategy_config or DEFAULT_STRATEGY_CONFIG
     source_counts = Counter(str(row.get("source") or "unknown") for row in quotes)
-    primary_quote_count = source_counts.get(
-        "tencent_batch_quote", 0
-    ) + source_counts.get("eastmoney_quote", 0)
+    primary_quote_count = (
+        source_counts.get("gm_current_quote", 0)
+        + source_counts.get("tencent_batch_quote", 0)
+        + source_counts.get("eastmoney_quote", 0)
+    )
     minimum_full_market_quotes = get_int(
         strategy_config, "data_quality.minimum_full_market_quotes", 500
     )
@@ -572,8 +590,13 @@ def _data_acquisition_summary(
         quality_state = "degraded"
     channels = [
         {
+            "name": "gm_current_quote",
+            "purpose": "preferred full-market A-share quote universe via GM SDK",
+            "usable_records": source_counts.get("gm_current_quote", 0),
+        },
+        {
             "name": "tencent_batch_quote",
-            "purpose": "A-share quote universe, breadth, amount, and price snapshot",
+            "purpose": "fallback A-share quote universe, breadth, amount, and price snapshot",
             "usable_records": source_counts.get("tencent_batch_quote", 0),
         },
         {
@@ -582,8 +605,14 @@ def _data_acquisition_summary(
             "usable_records": source_counts.get("eastmoney_quote", 0),
         },
         {
+            "name": "gm_history_kline",
+            "purpose": "preferred daily kline history for technical confirmation",
+            "attempted_symbols": kline_attempt_count,
+            "successful_symbols": kline_success_count,
+        },
+        {
             "name": "eastmoney_kline",
-            "purpose": "daily kline history for technical confirmation",
+            "purpose": "fallback daily kline history for technical confirmation",
             "attempted_symbols": kline_attempt_count,
             "successful_symbols": kline_success_count,
         },
@@ -626,11 +655,15 @@ def _data_acquisition_summary(
         channels.append(
             {
                 "name": "mixed_order_size_fund_flow",
-                "purpose": "institution/retail proxy via super-large/large vs medium/small orders",
+                "purpose": (
+                    "institution/retail proxy via GM, 10jqka selected-symbol "
+                    "realFunds, and order-size public fallbacks"
+                ),
                 "status": str(ownership_flow.get("status") or "unknown"),
                 "requested_symbols": int(ownership_flow.get("requested_symbols") or 0),
                 "usable_records": int(ownership_flow.get("usable_records") or 0),
                 "source_counts": ownership_flow.get("source_counts") or {},
+                "source_errors": ownership_flow.get("source_errors") or {},
                 "error": str(ownership_flow.get("error") or ""),
             }
         )
@@ -708,6 +741,16 @@ def _fetch_kline(
     end_date: str,
     strategy_config: dict[str, Any] | None = None,
 ) -> list[dict[str, float | str]]:
+    strategy_config = strategy_config or DEFAULT_STRATEGY_CONFIG
+    if get_bool(strategy_config, "gm.prefer_for_kline", True) and gm_available(
+        strategy_config
+    ):
+        try:
+            rows = fetch_gm_kline(symbol, end_date, strategy_config=strategy_config)
+            if rows:
+                return rows
+        except RuntimeError:
+            pass
     secid = ("1." if symbol.startswith(("6", "9")) else "0.") + symbol
     query = urllib.parse.urlencode(
         {

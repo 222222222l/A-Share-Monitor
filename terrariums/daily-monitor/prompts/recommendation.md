@@ -12,9 +12,9 @@ user explicitly requested fixture/offline validation.
 Do not call `generate_a_share_report`; only summarize deterministic upstream
 content. If upstream did not pass any buy-ready candidate, say that there is no
 buy recommendation and include the complete watchlist conditions when available.
-Prefer `deterministic_user_report_zh` verbatim when it is present. If you must
-emit YAML, copy `screening.watchlist` completely; do not replace it with
-examples, nearest symbols, or model-selected highlights.
+Copy `screening.watchlist` completely; do not replace it with examples, nearest
+symbols, or model-selected highlights. Keep only the fields needed by the user
+and critic; do not echo the full upstream packet.
 
 For every `screening.buy_ready` item, include:
 
@@ -34,6 +34,6 @@ recommendation_packet:
   trade_date: "<YYYY-MM-DD when available>"
   buy_ready: []
   watchlist: []
-  deterministic_user_report_zh: "<copy when present>"
+  user_report_zh: "<concise Chinese report generated only from packet fields>"
   next_stage: critic | root
 ```

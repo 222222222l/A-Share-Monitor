@@ -1,4 +1,4 @@
----
+﻿---
 title: A 股日线监控与投资建议 Agent 蓝图
 summary: 面向 A 股日线级别多头机会监控、筛选、分析、建议派发与后续交易扩展的业务 agent 蓝图和任务台账。
 tags:
@@ -652,7 +652,7 @@ trade_signal -> paper_order -> broker_adapter -> order_status -> audit_log
   - 适合模块：`examples/a-share-monitor`
   - 交付物：`kohaku.yaml`、README、基础目录、fixtures、scripts
   - 完成标准：可被 `kt install -e` 识别，且不污染 `test-kit`
-  - 备注：已新增 `examples/a-share-monitor/`、最小 `lab-runner` creature、Python 模块占位、schema / fixture / script 目录占位，以及 `verify_a1_package_skeleton.py` 验证脚本。
+  - 备注：已新增 `examples/a-share-monitor/`、最小 `lab-runner` creature、Python 模块占位、schema / fixture / script 目录占位，以及 `verify_all_offline.py` 验证脚本。
 
 ### 任务组 B. 数据契约与最小 fixture
 
@@ -661,55 +661,55 @@ trade_signal -> paper_order -> broker_adapter -> order_status -> audit_log
   - 解决问题：外部数据源字段不稳定，策略不能直接绑定第三方字段名
   - 适合模块：`examples/a-share-monitor/data-schema`
   - 完成标准：覆盖日线、指数、板块、资金、交易状态、财务风险和推荐输出
-  - 备注：已新增 `examples/a-share-monitor/data-schema/market-data-schema.yaml` 与 `verify_b1_market_data_schema.py`；schema 覆盖 security master、daily/index/sector bars、market breadth、technical indicators、divergence、fundamental risk events、ownership flow signals、sector score、stock signal 与 recommendation，并明确 TradingView 只作为可选 reference provider。
+  - 备注：已新增 `examples/a-share-monitor/data-schema/market-data-schema.yaml` 与 `verify_all_offline.py`；schema 覆盖 security master、daily/index/sector bars、market breadth、technical indicators、divergence、fundamental risk events、ownership flow signals、sector score、stock signal 与 recommendation，并明确 TradingView 只作为可选 reference provider。
 
 - [x] `B2` 创建最小本地 fixture
   - 状态：已完成
   - 解决问题：最小验证不能依赖网络和实时 API
   - 适合模块：`examples/a-share-monitor/fixtures`
   - 完成标准：包含至少 5 只样例股票、2 个指数、2 个板块、60 个交易日以上日线
-  - 备注：已新增 `fixtures/b2_minimal/` 合成离线数据集、`generate_b2_fixture.py` 生成脚本与 `verify_b2_offline_fixture.py` 验证脚本；当前 fixture 包含 5 只可交易样例股、1 个北交所参考项、3 个指数、2 个板块、180 个交易日和对手盘代理信号，全部可在无网络环境下验证。
+  - 备注：已新增 `fixtures/b2_minimal/` 合成离线数据集、`generate_b2_fixture.py` 生成脚本与 `verify_all_offline.py` 验证脚本；当前 fixture 包含 5 只可交易样例股、1 个北交所参考项、3 个指数、2 个板块、180 个交易日和对手盘代理信号，全部可在无网络环境下验证。
 
 - [x] `B3` 实现数据加载 adapter
   - 状态：已完成
   - 解决问题：fixture、AkShare、baostock、付费源需要统一接口
   - 适合模块：`examples/a-share-monitor/a_share_monitor/data`
   - 完成标准：最小验证可从 fixture 加载统一数据对象
-  - 备注：已新增 `a_share_monitor/data/models.py`、`a_share_monitor/data/fixture_adapter.py` 与 `verify_b3_fixture_adapter.py`；当前 adapter 可将 B2 CSV fixture 加载为统一 `MarketDataset`，并覆盖可交易股票、北交所参考项、日线、指数、板块、市场宽度、风险事件和对手盘代理信号。
+  - 备注：已新增 `a_share_monitor/data/models.py`、`a_share_monitor/data/fixture_adapter.py` 与 `verify_all_offline.py`；当前 adapter 可将 B2 CSV fixture 加载为统一 `MarketDataset`，并覆盖可交易股票、北交所参考项、日线、指数、板块、市场宽度、风险事件和对手盘代理信号。
 
 ### 任务组 C. 策略与风控
 
 - [x] `C0` 实现技术指标与背离检测
   - 状态：已完成
   - 完成标准：基于本地 OHLCV 计算 EMA、RSI、MACD、KDJ、ATR、相对强度、顶背离和底背离，并输出可回测的证据字段；只对 C1/C2/C3 后留下的候选标的计算，不做无条件全市场扫描
-  - 备注：已新增 `a_share_monitor/strategy/technical_indicators.py` 与 `verify_c0_technical_indicators.py`；C0 只对 C3 输出的 `candidate` 与 `watchlist` 标的计算技术指标，底背离和超跌信息只作为观察证据，不绕过右侧信号门。
+  - 备注：已新增 `a_share_monitor/strategy/technical_indicators.py` 与 `verify_all_offline.py`；C0 只对 C3 输出的 `candidate` 与 `watchlist` 标的计算技术指标，底背离和超跌信息只作为观察证据，不绕过右侧信号门。
 
 - [x] `C1` 实现 A 股市场状态判断
   - 状态：已完成
   - 完成标准：输出 `market_state`、`buy_permission` 与证据；状态至少覆盖 `liquidity_crisis`、`policy_support_rebound`、`rotation_opportunity`、`broad_risk_on`、`mixed_chop`、`overheated_chase_risk` 和 `unknown`，不得用单一指数趋势或上涨家数阈值作为硬开关
-  - 备注：已新增 `a_share_monitor/strategy/market_state.py` 与 `verify_c1_market_state.py`；C1 只读取 `load_market_context()`，不读取全量股票池、个股日线、个股对手盘或基本面风险事件。
+  - 备注：已新增 `a_share_monitor/strategy/market_state.py` 与 `verify_all_offline.py`；C1 只读取 `load_market_context()`，不读取全量股票池、个股日线、个股对手盘或基本面风险事件。
 
 - [x] `C2` 实现板块强度评分
   - 状态：已完成
   - 完成标准：输出板块相对强度、成交额放大和景气度参考
-  - 备注：已新增 `a_share_monitor/strategy/sector_strength.py` 与 `verify_c2_sector_strength.py`；C2 只读取市场状态和板块历史，不读取全量股票池、个股日线、个股对手盘或个股基本面风险事件。
+  - 备注：已新增 `a_share_monitor/strategy/sector_strength.py` 与 `verify_all_offline.py`；C2 只读取市场状态和板块历史，不读取全量股票池、个股日线、个股对手盘或个股基本面风险事件。
 
 - [x] `C3` 实现个股过滤、右侧信号识别与观察列表
   - 状态：已完成
   - 完成标准：只在 C2 放行板块内读取股票池和候选个股；只允许明确右侧信号进入候选，例如强趋势回踩和平台突破；不交易左侧抄底、赌底部或未确认反转，`oversold_reversal` 不得作为买入候选；散户 / 机构对手盘信号作为确认层和风险层；技术面尚未达标但基础条件通过的个股进入 `watchlist`，用于后续增量跟踪。
-  - 备注：已新增 `a_share_monitor/strategy/stock_screen.py` 与 `verify_c3_stock_screen.py`；C3 不读取完整数据集，不读取基本面风险事件，基本面风险保留到最终建议阶段作为用户判断用的保险提示；当前输出分为 `candidate`、`watchlist`、`rejected` 三类。
+  - 备注：已新增 `a_share_monitor/strategy/stock_screen.py` 与 `verify_all_offline.py`；C3 不读取完整数据集，不读取基本面风险事件，基本面风险保留到最终建议阶段作为用户判断用的保险提示；当前输出分为 `candidate`、`watchlist`、`rejected` 三类。
 
 - [x] `C4` 实现风险收益比与仓位计算
   - 状态：已完成
   - 完成标准：所有买入候选必须满足 `risk_reward > 1.5`，并输出技术面卖出风险价位、风险价依据、基本面风险触发条件、对手盘风险提示和时间止损规则
-  - 备注：已新增 `a_share_monitor/strategy/risk_plan.py`、`verify_c4_risk_plan.py` 与 `verify_c_group_technical_screening.py`；C4 只对 C3 的 `candidate` 生成买入计划，基本面风险只在最终计划阶段读取并作为用户判断用的风险提示，`watchlist` 不输出买入建议。
+  - 备注：已新增 `a_share_monitor/strategy/risk_plan.py`、`verify_all_offline.py` 与 `verify_all_offline.py`；C4 只对 C3 的 `candidate` 生成买入计划，基本面风险只在最终计划阶段读取并作为用户判断用的风险提示，`watchlist` 不输出买入建议。
 
 ### 任务组 D. Agent 与 Terrarium
 
 - [x] `D1` 创建最小单 creature 分析入口
   - 状态：已完成
   - 完成标准：能读取 fixture 并生成结构化候选报告
-  - 备注：已新增 `a_share_monitor/reporting/structured_report.py`、`generate_a_share_report` 自定义工具、`generate_d1_structured_report.py` 与 `verify_d1_structured_report.py`；`lab-runner` 可从 fixture 生成 `a-share-monitor.report.v1` 结构化候选报告。
+  - 备注：已新增 `a_share_monitor/reporting/structured_report.py`、`generate_a_share_report` 自定义工具、`generate_a_share_report` 与 `verify_all_offline.py`；`lab-runner` 可从 fixture 生成 `a-share-monitor.report.v1` 结构化候选报告。
 
 - [x] `D2` 创建最小 terrarium
   - 状态：已完成
@@ -719,7 +719,7 @@ trade_signal -> paper_order -> broker_adapter -> order_status -> audit_log
 - [x] `D3` 添加策略审查 critic
   - 状态：已完成
   - 完成标准：能拒绝盈亏比不足、缺少卖出风险价位、数据缺失、追高、一字板和风险偏好冲突的建议
-  - 备注：已新增 `strategy-critic` creature 与 deterministic critic review；`verify_d3_strategy_critic.py` 覆盖低盈亏比、缺少卖出风险价位、观察列表买入计划和真实交易边界。
+  - 备注：已新增 `strategy-critic` creature 与 deterministic critic review；`verify_all_offline.py` 覆盖低盈亏比、缺少卖出风险价位、观察列表买入计划和真实交易边界。
 
 ### 任务组 E. 验证与回测
 
@@ -731,12 +731,12 @@ trade_signal -> paper_order -> broker_adapter -> order_status -> audit_log
 - [x] `E2` 建立简单事件驱动回测
   - 状态：已完成
   - 完成标准：考虑 T+1、涨跌停、交易成本、滑点和无法成交
-  - 备注：已新增 `a_share_monitor/backtest/event_backtest.py` 与 `verify_e2_event_backtest.py`，覆盖 T+1 当日不可卖、滑点、佣金、目标价退出和最大不利波动。
+  - 备注：已新增 `a_share_monitor/backtest/event_backtest.py` 与 `verify_all_offline.py`，覆盖 T+1 当日不可卖、滑点、佣金、目标价退出和最大不利波动。
 
 - [x] `E3` 建立 paper trading 日志格式
   - 状态：已完成
   - 完成标准：能记录信号、计划、模拟订单、成交假设、持仓和退出原因
-  - 备注：已新增 `a_share_monitor/backtest/paper_trading.py` 与 `verify_e3_paper_trading_log.py`；日志格式保持 `real_trading_enabled=false`，只记录纸面计划和审计边界。
+  - 备注：已新增 `a_share_monitor/backtest/paper_trading.py` 与 `verify_all_offline.py`；日志格式保持 `real_trading_enabled=false`，只记录纸面计划和审计边界。
 
 ### 任务组 F. 外部数据源与交易扩展
 

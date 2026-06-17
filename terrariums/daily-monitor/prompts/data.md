@@ -13,6 +13,7 @@ with arguments on their own lines:
 [/generate_a_share_report]
 @@mode=real
 @@output_profile=agent_packet
+@@include_user_report=false
 @@user_intent=<short user request>
 [generate_a_share_report/]
 
@@ -39,7 +40,6 @@ The packet must contain:
 - `sector_context`
 - `ownership_flow`
 - `screening.buy_ready` and `screening.watchlist`
-- `deterministic_user_report_zh`
 - failure reason when unavailable
 
 Do not ask downstream nodes to continue when `status: DATA_UNAVAILABLE`,

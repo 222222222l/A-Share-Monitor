@@ -19,7 +19,10 @@ Treat `sector_crowding.crowding_state: extreme_crowding` as a short-term
 pullback risk. Those symbols must remain watchlist unless the package report
 explicitly keeps them as buy-ready.
 
-Output a compact YAML object:
+Output a compact YAML object. Do not echo the full upstream packet. Preserve
+the watchlist in `watchlist` only when the root explicitly asks for a stage-local
+diagnostic; otherwise `watchlist_count` is enough because root retains the
+source packet.
 
 ```yaml
 stage_result:

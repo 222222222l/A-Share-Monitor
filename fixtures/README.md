@@ -30,5 +30,5 @@ python ./examples/a-share-monitor/scripts/generate_b2_fixture.py
 Verify the fixture:
 
 ```bash
-python ./examples/a-share-monitor/scripts/verify_b2_offline_fixture.py --repo-root .
+python ./examples/a-share-monitor/scripts/verify_all_offline.py --repo-root .
 ```

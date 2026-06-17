@@ -14,7 +14,10 @@ When there are no buy-ready candidates, do not create risk plans for watchlist
 symbols. Preserve the complete `screening.watchlist` with failed
 conditions so the final user output remains deterministic.
 
-Output a compact YAML object:
+Output a compact YAML object. Do not echo the full upstream packet. Preserve
+the watchlist in `watchlist` only when the root explicitly asks for a stage-local
+diagnostic; otherwise `watchlist_count` is enough because root retains the
+source packet.
 
 ```yaml
 stage_result:
