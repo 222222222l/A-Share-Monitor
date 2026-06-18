@@ -39,6 +39,8 @@ This package currently contains the daily-monitor package path:
 - compact offline validation, event backtest, and paper-trading log helpers
 - compact Web UI handoff packets that avoid sending full-market rows or verbose
   duplicate reports through every agent node
+- direct Web UI pipeline routing where root supervises status and only receives
+  the final critic-reviewed result
 
 Blueprint: `docs/zh-CN/dev/a-share-monitor-blueprint.md`
 
@@ -60,6 +62,14 @@ Raw full-market rows and full kline histories are not passed to LLM nodes. The
 Web UI terrarium receives `a-share-monitor.agent-packet.v1`, a compact packet
 containing only data-quality counts, market context, sector context,
 recommendations, watchlist conditions, and risk fields.
+
+In the Web UI terrarium, normal content flows directly through:
+
+`data -> regime -> screen -> risk -> recommendation -> critic -> root`
+
+Root is only a lightweight supervisor. It starts the workflow, receives
+metadata-only status pings from intermediate nodes, and shows the final
+critic-reviewed result. It does not broker or resend compact packets.
 
 ## Strategy Configuration
 
@@ -113,6 +123,10 @@ The Web UI package is designed to keep model prompts stable across providers:
 - The compact packet omits the deterministic Chinese final report unless
   `include_user_report: true` is explicitly requested for debugging.
 - Stage nodes must not echo the full upstream packet in their own YAML outputs.
+- Non-critic nodes send only metadata-only status pings to root; full packet
+  content stays on the direct downstream edge.
+- `critic` reviews once and must not ask data nodes to retry optional sector or
+  fund-flow enrichment.
 - Data-acquisition progress is streamed to the UI as activity metadata and is
   not embedded into the normal compact packet.
 - Use `output_profile: full_report` only for manual debugging because it can

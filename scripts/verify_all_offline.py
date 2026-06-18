@@ -51,6 +51,7 @@ def verify(repo_root: Path) -> dict[str, Any]:
     manifest = yaml.safe_load((PACKAGE_ROOT / "kohaku.yaml").read_text("utf-8"))
     check(manifest["name"] == "a-share-monitor", "manifest name mismatch")
     check(manifest["terrariums"][0]["name"] == "daily-monitor", "terrarium missing")
+    _verify_daily_monitor_wiring()
 
     config = load_strategy_config(PACKAGE_ROOT / "config" / "strategy.yaml")
     check(config["gm"]["enabled"] is True, "GM source should be enabled")
@@ -161,6 +162,49 @@ def verify(repo_root: Path) -> dict[str, Any]:
         },
         "real_mode_boundary": unavailable["status"],
     }
+
+
+def _verify_daily_monitor_wiring() -> None:
+    config_path = PACKAGE_ROOT / "terrariums" / "daily-monitor" / "terrarium.yaml"
+    config = yaml.safe_load(config_path.read_text("utf-8"))
+    creatures = config["terrarium"]["creatures"]
+    by_name = {creature["name"]: creature for creature in creatures}
+
+    expected_first_targets = {
+        "data": "regime",
+        "regime": "screen",
+        "screen": "risk",
+        "risk": "recommendation",
+        "recommendation": "critic",
+        "critic": "root",
+    }
+    for name, target in expected_first_targets.items():
+        wiring = by_name[name].get("output_wiring", [])
+        check(wiring, f"{name} output_wiring missing")
+        first = wiring[0] if isinstance(wiring[0], dict) else {"to": wiring[0]}
+        check(first.get("to") == target, f"{name} must route first to {target}")
+
+    for name in ("data", "regime", "screen", "risk", "recommendation"):
+        wiring = by_name[name].get("output_wiring", [])
+        root_edges = [
+            edge
+            for edge in wiring
+            if isinstance(edge, dict) and edge.get("to") == "root"
+        ]
+        check(root_edges, f"{name} must emit a root status ping")
+        check(
+            all(edge.get("with_content") is False for edge in root_edges),
+            f"{name} root edge must be metadata-only",
+        )
+
+    root_prompt = (
+        PACKAGE_ROOT / "terrariums" / "daily-monitor" / "prompts" / "root.md"
+    ).read_text("utf-8")
+    forbidden = ("Forward the packet", "Forward the packet once per stage")
+    check(
+        not any(text in root_prompt for text in forbidden),
+        "root prompt must not broker packets",
+    )
 
 
 if __name__ == "__main__":

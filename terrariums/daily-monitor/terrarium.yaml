@@ -15,10 +15,11 @@ terrarium:
       base_config: ../../creatures/lab-runner/
       system_prompt_file: prompts/data.md
       output_wiring:
+        - to: regime
+          prompt: "{content}"
         - to: root
-      channels:
-        listen: [tasks]
-        can_send: [status]
+          with_content: false
+          prompt: "status_ping: data completed; full packet routed directly to regime."
 
     - name: regime
       base_config: ../../creatures/lab-runner/
@@ -28,10 +29,11 @@ terrarium:
         - think
         - stop_task
       output_wiring:
+        - to: screen
+          prompt: "{content}"
         - to: root
-      channels:
-        listen: [status]
-        can_send: [status]
+          with_content: false
+          prompt: "status_ping: regime completed; packet routed directly to screen."
 
     - name: screen
       base_config: ../../creatures/lab-runner/
@@ -41,10 +43,11 @@ terrarium:
         - think
         - stop_task
       output_wiring:
+        - to: risk
+          prompt: "{content}"
         - to: root
-      channels:
-        listen: [status]
-        can_send: [status]
+          with_content: false
+          prompt: "status_ping: screen completed; packet routed directly to risk."
 
     - name: risk
       base_config: ../../creatures/lab-runner/
@@ -54,10 +57,11 @@ terrarium:
         - think
         - stop_task
       output_wiring:
+        - to: recommendation
+          prompt: "{content}"
         - to: root
-      channels:
-        listen: [status]
-        can_send: [status]
+          with_content: false
+          prompt: "status_ping: risk completed; packet routed directly to recommendation."
 
     - name: recommendation
       base_config: ../../creatures/lab-runner/
@@ -67,21 +71,17 @@ terrarium:
         - think
         - stop_task
       output_wiring:
+        - to: critic
+          prompt: "{content}"
         - to: root
-      channels:
-        listen: [status]
-        can_send: [results, status]
+          with_content: false
+          prompt: "status_ping: recommendation completed; packet routed directly to critic."
 
     - name: critic
       base_config: ../../creatures/strategy-critic/
       system_prompt_file: prompts/critic.md
       output_wiring:
         - to: root
-      channels:
-        listen: [results, status]
-        can_send: [results]
 
   channels:
     tasks: { type: queue }
-    status: { type: broadcast }
-    results: { type: queue }

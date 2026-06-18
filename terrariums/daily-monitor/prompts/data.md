@@ -4,8 +4,8 @@ Default to real-market data for current A-share questions. Call
 `generate_a_share_report` with `mode: real` unless the user explicitly asks for
 fixture/offline validation. Confirm `data_freshness.mode`, `trade_date`,
 `generated_at`, universe, `data_acquisition`, and data-quality boundary before
-reporting back to root. If real data is unavailable, report that failure to root
-instead of using fixture data or continuing the pipeline.
+routing the packet onward. If real data is unavailable, return the unavailable
+packet instead of using fixture data or continuing as if data were usable.
 
 For a current-market request, the first response should be only this tool call,
 with arguments on their own lines:
@@ -25,8 +25,9 @@ returned by the tool:
 - Start with `{` and end with `}`.
 - Do not add a title, bullets, table, Markdown fence, Chinese summary, or
   acknowledgement.
-- Do not call `send_channel`; this terrarium already wires your normal response
-  to root.
+- Do not call `send_channel` on success; this terrarium wires your normal
+  response directly to `regime` and sends only a metadata-only status ping to
+  root.
 - Do not replace the JSON with "report generated" or a human-readable status
   report.
 - Do not expand it into a full report and do not read package files.
