@@ -37,6 +37,9 @@ def build_agent_packet(
         "market_context": _market_context_packet(report),
         "sector_context": _sector_context_packet(report.get("sector_crowding") or {}),
         "ownership_flow": _ownership_summary_packet(report.get("ownership_flow") or {}),
+        "quote_supplement": _quote_supplement_summary_packet(
+            report.get("quote_supplement") or {}
+        ),
         "screening": {
             "recommendation_count": len(buy_ready),
             "watchlist_count": len(watchlist),
@@ -209,6 +212,10 @@ def _candidate_packet(item: dict[str, Any]) -> dict[str, Any]:
             "time_exit_rule": _short_time_exit(item.get("time_exit_rule")),
             "ownership_flow": _ownership_item_packet(item.get("ownership_flow") or {}),
             "sector_crowding": _sector_item_packet(item.get("sector_crowding") or {}),
+            "quote_supplement": _quote_supplement_packet(
+                item.get("quote_supplement") or {}
+            ),
+            "valuation_risk_flags": item.get("valuation_risk_flags", []),
         }
     )
 
@@ -227,6 +234,10 @@ def _watchlist_packet(item: dict[str, Any]) -> dict[str, Any]:
             ),
             "ownership_flow": _ownership_item_packet(item.get("ownership_flow") or {}),
             "sector_crowding": _sector_item_packet(item.get("sector_crowding") or {}),
+            "quote_supplement": _quote_supplement_packet(
+                item.get("quote_supplement") or {}
+            ),
+            "valuation_risk_flags": item.get("valuation_risk_flags", []),
         }
     )
 
@@ -239,6 +250,33 @@ def _ownership_item_packet(flow: dict[str, Any]) -> dict[str, Any]:
             "main_net_inflow": flow.get("main_net_inflow"),
             "institutional_proxy_net": flow.get("institutional_proxy_net"),
             "retail_proxy_net": flow.get("retail_proxy_net"),
+        }
+    )
+
+
+def _quote_supplement_summary_packet(summary: dict[str, Any]) -> dict[str, Any]:
+    return _compact(
+        {
+            "source": summary.get("source", ""),
+            "status": summary.get("status", "unknown"),
+            "scope": summary.get("scope", ""),
+            "requested_symbols": summary.get("requested_symbols", 0),
+            "usable_records": summary.get("usable_records", 0),
+            "fallback_from_scope": summary.get("fallback_from_scope", ""),
+            "error": summary.get("error", ""),
+        }
+    )
+
+
+def _quote_supplement_packet(item: dict[str, Any]) -> dict[str, Any]:
+    return _compact(
+        {
+            "source": item.get("source", ""),
+            "turnover_rate": item.get("turnover_rate"),
+            "pe_dynamic": item.get("pe_dynamic"),
+            "pb": item.get("pb"),
+            "volume_ratio": item.get("volume_ratio"),
+            "amplitude": item.get("amplitude"),
         }
     )
 

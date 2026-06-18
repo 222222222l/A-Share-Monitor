@@ -79,6 +79,17 @@ sector_crowding:
   extreme_score: 0.85
   avoid_extreme_crowding: true
 
+eastmoney_supplement:
+  enabled: true
+  include_watchlist: true
+  fallback_buy_ready_only: true
+  batch_size: 20
+  request_delay_seconds: 0.8
+  pe_high_threshold: 80
+  pb_high_threshold: 8
+  volume_ratio_high_threshold: 3
+  turnover_high_threshold: 10
+
 technical:
   min_history_days: 60
   ema_fast: 5

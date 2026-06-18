@@ -94,6 +94,17 @@ DEFAULT_STRATEGY_CONFIG: dict[str, Any] = {
         "extreme_score": 0.85,
         "avoid_extreme_crowding": True,
     },
+    "eastmoney_supplement": {
+        "enabled": True,
+        "include_watchlist": True,
+        "fallback_buy_ready_only": True,
+        "batch_size": 20,
+        "request_delay_seconds": 0.8,
+        "pe_high_threshold": 80,
+        "pb_high_threshold": 8,
+        "volume_ratio_high_threshold": 3,
+        "turnover_high_threshold": 10,
+    },
     "technical": {
         "min_history_days": 60,
         "ema_fast": 5,
@@ -263,6 +274,17 @@ def summarize_strategy_config(strategy_config: dict[str, Any]) -> dict[str, Any]
             ),
             "avoid_extreme_crowding": get_bool(
                 strategy_config, "sector_crowding.avoid_extreme_crowding", True
+            ),
+        },
+        "eastmoney_supplement": {
+            "enabled": get_bool(strategy_config, "eastmoney_supplement.enabled", True),
+            "include_watchlist": get_bool(
+                strategy_config, "eastmoney_supplement.include_watchlist", True
+            ),
+            "fallback_buy_ready_only": get_bool(
+                strategy_config,
+                "eastmoney_supplement.fallback_buy_ready_only",
+                True,
             ),
         },
     }

@@ -10,6 +10,9 @@ offline fixtures for validation:
 - fetch full-market quotes and candidate klines before screening
 - calculate technical indicators from normalized OHLCV data
 - enrich only candidate/watchlist symbols with fund-flow and sector-crowding data
+- enrich only candidate/watchlist symbols with Eastmoney PE/PB, volume-ratio,
+  and turnover supplements, falling back to buy-ready-only when the public
+  source becomes unstable
 - keep real trading disabled
 - emit compact structured recommendations for user review
 - preserve future broker / paper-order extension points
@@ -57,6 +60,10 @@ For current-market requests, the daily monitor uses a staged data path:
 5. Enrich only buy-ready and watchlist symbols with selected-symbol fund-flow
    sources, preferring GM money-flow data, then 10jqka `realFunds`, then public
    Eastmoney/AkShare fallbacks.
+6. Enrich only buy-ready and watchlist symbols with Eastmoney selected-symbol
+   quote supplements for turnover, dynamic PE, PB, volume ratio, and valuation
+   crowding flags. If that selected request fails, retry only buy-ready symbols
+   and continue with a warning when unavailable.
 
 Raw full-market rows and full kline histories are not passed to LLM nodes. The
 Web UI terrarium receives `a-share-monitor.agent-packet.v1`, a compact packet
@@ -80,6 +87,7 @@ while exposing the main decision knobs:
 - data quality gates and retry bounds
 - optional GM SDK quote/kline priority source
 - optional 10jqka selected-symbol fund-flow source
+- optional Eastmoney selected-symbol valuation and volume-risk supplement
 - quote pre-screening thresholds
 - market-regime and liquidity gates
 - EMA/ATR technical confirmation windows
@@ -115,6 +123,16 @@ as an institutional proxy; medium/small-order net flow is used as a retail
 proxy. Turnover is treated as an optional enrichment field and sector crowding
 is the preferred crowding-risk substitute.
 
+## Optional Eastmoney Selected-Symbol Supplement
+
+Eastmoney is used as a low-frequency supplement, not as a required full-market
+scrape. After the deterministic screen has produced buy-ready and watchlist
+symbols, the package calls the selected-symbol quote endpoint only for those
+symbols to fetch turnover rate, volume ratio, dynamic PE, PB, and market-cap
+fields. If the request is blocked or disconnected, the package retries the
+smaller buy-ready-only set and records the failure as a warning instead of
+blocking the workflow.
+
 ## Token Cost Control
 
 The Web UI package is designed to keep model prompts stable across providers:
@@ -127,6 +145,8 @@ The Web UI package is designed to keep model prompts stable across providers:
   content stays on the direct downstream edge.
 - `critic` reviews once and must not ask data nodes to retry optional sector or
   fund-flow enrichment.
+- Eastmoney supplement failures are represented as compact channel status and
+  warnings; they do not trigger whole-pipeline retries.
 - Data-acquisition progress is streamed to the UI as activity metadata and is
   not embedded into the normal compact packet.
 - Use `output_profile: full_report` only for manual debugging because it can

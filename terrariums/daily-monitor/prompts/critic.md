@@ -19,6 +19,7 @@ Warnings, not retries:
 
 - missing optional sector-crowding or relative-warming data
 - missing optional institution/retail fund-flow proxy data
+- missing optional Eastmoney selected-symbol PE/PB/volume-ratio/turnover data
 - unavailable public data channel where the packet already says data quality is
   usable enough for research output
 

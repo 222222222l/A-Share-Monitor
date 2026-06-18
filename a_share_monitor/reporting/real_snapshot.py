@@ -23,6 +23,9 @@ from a_share_monitor.config import get_int
 from a_share_monitor.config import load_strategy_config
 from a_share_monitor.config import summarize_strategy_config
 from a_share_monitor.reporting.deterministic_output import attach_deterministic_outputs
+from a_share_monitor.reporting.eastmoney_supplement import (
+    attach_selected_quote_supplements,
+)
 from a_share_monitor.reporting.gm_source import fetch_gm_kline
 from a_share_monitor.reporting.gm_source import fetch_gm_universe_quotes
 from a_share_monitor.reporting.gm_source import gm_available
@@ -444,6 +447,9 @@ def _build_snapshot_report(
     watchlist = [row for row in history_rows if row["status"] == "watchlist"][
         :watchlist_limit
     ]
+    quote_supplement_summary = attach_selected_quote_supplements(
+        recommendations, watchlist, strategy_config, progress, _get_json
+    )
     planned_symbols = [row["symbol"] for row in recommendations]
     watchlist_symbols = [row["symbol"] for row in watchlist]
     report = {
@@ -465,6 +471,7 @@ def _build_snapshot_report(
             market_environment=environment,
             ownership_flow=ownership_flow_summary,
             sector_crowding=sector_crowding,
+            quote_supplement=quote_supplement_summary,
             strategy_config=strategy_config,
         ),
         "strategy_config": summarize_strategy_config(strategy_config),
@@ -476,6 +483,7 @@ def _build_snapshot_report(
         "sector_scope": environment["sector_scope"],
         "sector_crowding": public_sector_crowding(sector_crowding),
         "ownership_flow": ownership_flow_summary,
+        "quote_supplement": quote_supplement_summary,
         "selection_summary": {
             "min_risk_reward": min_risk_reward,
             "planned_symbols": planned_symbols,
@@ -569,6 +577,7 @@ def _data_acquisition_summary(
     market_environment: dict[str, Any] | None = None,
     ownership_flow: dict[str, Any] | None = None,
     sector_crowding: dict[str, Any] | None = None,
+    quote_supplement: dict[str, Any] | None = None,
     error: str | None = None,
     strategy_config: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
@@ -665,6 +674,23 @@ def _data_acquisition_summary(
                 "source_counts": ownership_flow.get("source_counts") or {},
                 "source_errors": ownership_flow.get("source_errors") or {},
                 "error": str(ownership_flow.get("error") or ""),
+            }
+        )
+    if quote_supplement is not None:
+        channels.append(
+            {
+                "name": "eastmoney_selected_quote_supplement",
+                "purpose": (
+                    "selected buy-ready/watchlist PE, PB, volume-ratio, and "
+                    "turnover risk fields"
+                ),
+                "status": str(quote_supplement.get("status") or "unknown"),
+                "requested_symbols": int(
+                    quote_supplement.get("requested_symbols") or 0
+                ),
+                "usable_records": int(quote_supplement.get("usable_records") or 0),
+                "source_counts": quote_supplement.get("source_counts") or {},
+                "error": str(quote_supplement.get("error") or ""),
             }
         )
     return {

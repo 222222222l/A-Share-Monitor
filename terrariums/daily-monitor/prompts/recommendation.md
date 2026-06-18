@@ -30,10 +30,13 @@ For every `screening.buy_ready` item, include:
   leader when present
 - fund-flow state: `ownership_flow.counterparty_signal`, institutional proxy net,
   and retail proxy net when present
+- valuation and volume risk: `quote_supplement.pe_dynamic`,
+  `quote_supplement.pb`, `quote_supplement.volume_ratio`,
+  `quote_supplement.turnover_rate`, and `valuation_risk_flags` when present
 - technical, fundamental, and time-exit rules
 
-If sector or fund-flow fields are unavailable, preserve the candidate and add a
-warning. Do not retry data fetching.
+If sector, fund-flow, or Eastmoney supplement fields are unavailable, preserve
+the candidate and add a warning. Do not retry data fetching.
 
 Output only this compact YAML object:
 

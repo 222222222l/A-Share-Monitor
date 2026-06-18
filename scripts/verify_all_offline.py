@@ -17,6 +17,7 @@ from a_share_monitor.data import load_fixture_dataset
 from a_share_monitor.reporting import build_agent_packet
 from a_share_monitor.reporting import build_latest_fixture_report
 from a_share_monitor.reporting import build_unavailable_real_snapshot
+from a_share_monitor.reporting.eastmoney_supplement import normalize_quote_supplement
 from a_share_monitor.strategy import evaluate_latest_fixture_market_state
 from a_share_monitor.strategy import evaluate_latest_fixture_risk_plan
 from a_share_monitor.strategy import evaluate_latest_fixture_sector_strength
@@ -64,6 +65,10 @@ def verify(repo_root: Path) -> dict[str, Any]:
         config["data_quality"]["disable_system_proxy"] is True,
         "public data should bypass system proxy by default",
     )
+    check(
+        config["eastmoney_supplement"]["enabled"] is True,
+        "Eastmoney selected-symbol supplement should be enabled",
+    )
 
     dataset = load_fixture_dataset()
     check(len(dataset.securities) >= 6, "fixture securities are missing")
@@ -93,6 +98,31 @@ def verify(repo_root: Path) -> dict[str, Any]:
     check(
         "deterministic_user_report_zh" not in packet,
         "default agent packet must omit verbose user report",
+    )
+    supplement = normalize_quote_supplement(
+        {
+            "f12": "300750",
+            "f14": "CATL",
+            "f2": 100,
+            "f3": 1.2,
+            "f5": 1000,
+            "f6": 1000000,
+            "f7": 2.5,
+            "f8": 12.5,
+            "f9": 120,
+            "f10": 3.2,
+            "f20": 100000000,
+            "f21": 80000000,
+            "f23": 9.5,
+        },
+        config,
+    )
+    check(supplement is not None, "Eastmoney supplement parser failed")
+    check(supplement["turnover_rate"] == 12.5, "turnover parser failed")
+    check(supplement["pe_dynamic"] == 120, "dynamic PE parser failed")
+    check(
+        "volume_turnover_crowding" in supplement["valuation_risk_flags"],
+        "valuation risk flags missing",
     )
     paper_log = build_paper_trade_log(report)
     check(paper_log["real_trading_enabled"] is False, "paper trading boundary")
@@ -143,6 +173,13 @@ def verify(repo_root: Path) -> dict[str, Any]:
     ).read_text("utf-8")
     check(
         "fetch_ths_symbol_fund_flows" in fund_flow_text, "10jqka fund-flow hook missing"
+    )
+    supplement_text = (
+        PACKAGE_ROOT / "a_share_monitor" / "reporting" / "eastmoney_supplement.py"
+    ).read_text("utf-8")
+    check(
+        "attach_selected_quote_supplements" in supplement_text,
+        "Eastmoney selected-symbol supplement hook missing",
     )
 
     return {
